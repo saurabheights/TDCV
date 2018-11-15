@@ -3,12 +3,12 @@
 addpath('auxiliary_code/');
 
 % Load the teabox.ply
-[vertex,face] = read_ply('./data/model/teabox.ply');
+[vertices,faces] = read_ply('./data/model/teabox.ply');
 
-% pcshow only displays 4 points.
-% pcshow(pointCloud(vertex), 'VerticalAxis', 'Z', ...
+% pcshow only displays 4 points. pcshow(pointCloud(vertex), 'VerticalAxis',
+% 'Z', ...
 %     'VerticalAxisDir', 'Up');
-plot3(vertex(:,1),vertex(:,2),vertex(:,3),'g*');
+plot3(vertices(:,1),vertices(:,2),vertices(:,3),'g*');
 grid on
 axis equal
 xlabel('X');
@@ -53,7 +53,7 @@ cameraParams = cameraIntrinsics(focalLength, principalPoint, imageSize);
 
 %% Estimate world camera pose and display camera pose on same plot.
 for k = 1:length(jpegFiles)
-%     try
+    try
         imagePoints = corner_pixel{k};
         worldPoints = model.Location(num_corner{k},:);
         [worldOrientation,worldLocation] = estimateWorldCameraPose(imagePoints,worldPoints, cameraParams, 'MaxReprojectionError',5);
@@ -61,9 +61,9 @@ for k = 1:length(jpegFiles)
         plotCamera('Size',0.1,'Orientation',worldOrientation, ...
             'Location', worldLocation);
         hold off;
-%     catch
-%         fprintf('estimateWorldPose failed - %s, skipped.\n', num2str(k));
-%     end
+    catch
+        fprintf('estimateWorldPose failed - %s, skipped.\n', num2str(k));
+    end
 end
 
 hold off
@@ -80,10 +80,19 @@ for k = 1:1 % length(jpegFiles) %ToDo - remove length
     [f,d] = vl_sift(I) ;
     perm = randperm(size(f,2)) ;
     sel = perm(1:50) ;
-    h1 = vl_plotframe(f(:,sel)) ;
-    set(h1,'color','r','linewidth',3) ;
-    h3 = vl_plotsiftdescriptor(d(:,sel),f(:,sel)) ;
-    set(h3,'color','g') ;
+    %     h1 = vl_plotframe(f(:,sel)) ; set(h1,'color','r','linewidth',3) ;
+    %     h3 = vl_plotsiftdescriptor(d(:,sel),f(:,sel)) ;
+    %     set(h3,'color','g') ;
     
-    
+    %% For each triangle made of the vertices on the box
+    for faceIndex = 1:size(faces, 1)
+        %% Compute location of the teabox vertices in kth camera coordinate system.
+        faceVertices
+        
+        %% Check if the plane made from the vertices normal makes < 90 degrees, else continue
+        
+        %% Project each sift point to plane of teabox triangle
+        %TriangleRayIntersection('planeType', 'one sided', 'fullReturn', true);
+        %% Reject the points which did not intersect with the teabox triangle
+    end
 end

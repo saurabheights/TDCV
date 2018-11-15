@@ -3,7 +3,7 @@ function [intersect, t, u, v, xcoor] = TriangleRayIntersection (...
 %TRIANGLERAYINTERSECTION Ray/triangle intersection.
 %    INTERSECT = TriangleRayIntersection(ORIG, DIR, VERT1, VERT2, VERT3) 
 %      calculates ray/triangle intersections using the algorithm proposed
-%      BY Möller and Trumbore (1997), implemented as highly vectorized 
+%      BY Mï¿½ller and Trumbore (1997), implemented as highly vectorized 
 %      MATLAB code. The ray starts at ORIG and points toward DIR. The 
 %      triangle is defined by vertix points: VERT1, VERT2, VERT3. All input  
 %      arrays are in Nx3 or 1x3 format, where N is number of triangles or 
@@ -60,13 +60,13 @@ function [intersect, t, u, v, xcoor] = TriangleRayIntersection (...
 %  * one  face  / many   rays intersection
 %  * one  face  / one    ray  intersection
 %  * many faces / many   rays intersection
-%  In order to allow that to happen all imput arrays are expected in Nx3
+%  In order to allow that to happen all input arrays are expected in Nx3
 %  format, where N is number of vertices or rays. In most cases number of
 %  vertices is different than number of rays, so one of the imputs will
 %  have to be cloned to have the right size. Use "repmat(A,size(B,1),1)".
 %
 % Based on:
-%  *"Fast, minimum storage ray-triangle intersection". Tomas Möller and
+%  *"Fast, minimum storage ray-triangle intersection". Tomas Mï¿½ller and
 %    Ben Trumbore. Journal of Graphics Tools, 2(1):21--28, 1997.
 %    http://www.graphics.cornell.edu/pubs/1997/MT97.pdf
 %  * http://fileadmin.cs.lth.se/cs/Personal/Tomas_Akenine-Moller/raytri/
