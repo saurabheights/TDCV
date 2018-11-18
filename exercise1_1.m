@@ -1,9 +1,12 @@
+close all;
+
 %% Import needed paths
 % Add auxiliary_code to directory
 addpath('auxiliary_code/');
 
 % Load the teabox.ply
 [vertices,faces] = read_ply('./data/model/teabox.ply');
+faces = faces + 1;
 
 % pcshow only displays 4 points. pcshow(pointCloud(vertex), 'VerticalAxis',
 % 'Z', ...
