@@ -76,14 +76,16 @@ fig2 = figure('Name', 'Image', 'Color', [0.4 0.6 0.7]);
 for k = 1:numImages % length(jpegFiles) %ToDo - remove length
     I = imgs(:, :, :, k);
     
+    %% Display Image and compute its sift points.
+    figure(fig2); hold off;
     imshow(uint8(I));
     I = single(rgb2gray(uint8(I)));
-    [f,d] = vl_sift(I) ;
+    f = vl_sift(I) ;
     perm = randperm(size(f,2)) ;
-    sel = perm(1:50) ;
-    %     h1 = vl_plotframe(f(:,sel)) ; set(h1,'color','r','linewidth',3) ;
-    %     h3 = vl_plotsiftdescriptor(d(:,sel),f(:,sel)) ;
-    %     set(h3,'color','g') ;
+    disp('Truncated sift features to 5000 to reduce the computation');
+    sel = perm(1:5000);
+    IndicesInTeaImage = zeros(1,size(sel, 2));
+    
     %% Compute the Projection matrix for kth camera(image)
     C = worldLocations(k, :, :);
     [R, t] = cameraPoseToExtrinsics(squeeze(worldOrientations(k, :, :)), C);
@@ -134,13 +136,28 @@ for k = 1:numImages % length(jpegFiles) %ToDo - remove length
             pause(1);
 
             %% Save all sift feature indices which lie in the projected traingular meshes
-
-            %% Project each sift point to plane of teabox triangle
-%             TriangleRayIntersection('planeType', 'one sided', 'fullReturn', true);
-            %% Reject the points which did not intersect with the teabox triangle
-
+            P1 = pixelLocations(1,:);
+            P2 = pixelLocations(2,:);
+            P3 = pixelLocations(3,:);
+            P12 = P1-P2; P23 = P2-P3; P31 = P3-P1;
+            s = det([P1-P2;P3-P1]); % https://www.mathworks.com/matlabcentral/answers/277984-check-points-inside-triangle-or-on-edge-with-example
+            for siftRandomIndex = 1:size(sel, 2)
+                P = f(1:2, sel(siftRandomIndex))';
+                t = sign(det([P31;P23]))*sign(det([P3-P;P23])) >= 0 & ...
+                    sign(det([P12;P31]))*sign(det([P1-P;P31])) >= 0 & ...
+                    sign(det([P23;P12]))*sign(det([P2-P;P12])) >= 0 ;
+                if t
+                    IndicesInTeaImage(siftRandomIndex) = 1;
+                end
+            end
         end
     end
+    figure(fig2);
+    IndicesInTeaImage = find(IndicesInTeaImage == 1);
+    hold on; plot(f(1, sel(IndicesInTeaImage)), f(2, sel(IndicesInTeaImage)), 'y*');
 
+    %% Project each sift point to plane of teabox triangle
+%             TriangleRayIntersection('planeType', 'one sided', 'fullReturn', true);
+    %% Reject the points which did not intersect with the teabox triangle
 end
 pause(10);
