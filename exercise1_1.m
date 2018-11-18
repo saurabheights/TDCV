@@ -48,16 +48,18 @@ load corner_pixel
 %% Create intrinsic matrix
 focalLength = [2960.37845 2960.37845];
 principalPoint = [1841.68855 1235.23369];
-imageSize = [2456 3680]; % See - https://www.mathworks.com/help/vision/ref/cameraintrinsics.html
-cameraParams = cameraIntrinsics(focalLength, principalPoint, imageSize)
+imageSize = [3680 2456]; % See - https://www.mathworks.com/help/vision/ref/cameraintrinsics.html
+IntrinsicMatrix = [2960.37845,0,0;0,2960.37845,0;1841.68855,1235.23369,1];
+    % generate the camera parameters
+cameraParams = cameraParameters('IntrinsicMatrix', IntrinsicMatrix);
 
 %% Estimate world camera pose and display camera pose on same plot.
 worldOrientations= zeros(8, 3, 3);
 worldLocations= zeros(8, 3);
 for k = 1:numImages
     imagePoints = corner_pixel{k};
-    worldPoints = model.Location(corners_in_images{k},:);
-    [worldOrientation,worldLocation] = estimateWorldCameraPose(imagePoints,worldPoints, cameraParams, 'MaxReprojectionError',5);
+    worldPoints = single(vertices(corners_in_images{k},:));
+    [worldOrientation,worldLocation] = estimateWorldCameraPose(imagePoints,worldPoints, cameraParams, 'MaxReprojectionError',6);
     worldOrientations(k, :, :) = worldOrientation;
     worldLocations(k, :, :) = worldLocation;
     hold on;
@@ -85,10 +87,8 @@ for k = 1:numImages % length(jpegFiles) %ToDo - remove length
     %% Compute the Projection matrix for kth camera(image)
     C = worldLocations(k, :, :);
     [R, t] = cameraPoseToExtrinsics(squeeze(worldOrientations(k, :, :)), C);
-    K = cameraParams.IntrinsicMatrix'; % Matlab stores transpose of camera intrinsic params
-    Rt = zeros(3,4);
-    Rt(1:3, 1:3) = R;
-    Rt(:, 4) = t;
+    RT = [R; t];
+    projectionMatrix = RT * cameraParams.IntrinsicMatrix;
     
     %% For each triangle made of the vertices on the box
     for faceIndex = 1:size(faces, 1)
@@ -107,18 +107,31 @@ for k = 1:numImages % length(jpegFiles) %ToDo - remove length
 
             %% Compute location of the face vertices in kth camera coordinate system.
             
-            % Convert to homogeneous coordinate system
-            faceHomogeneousCoordinates = ones(4, 3); % Assumption: Each face has 3 vertex
-            faceHomogeneousCoordinates(1:3, 1:3) = faceVertices';
-            pixelLocations = K * Rt * faceHomogeneousCoordinates;
-            pixelLocations = bsxfun(@rdivide, pixelLocations, pixelLocations(3,:)); % Divide from last coordinate
-            pixelLocations(end,:) = []; % make non-homogeneous
+            % Below code didnt work. ToDo - Debug this.
+            % Convert to homogeneous coordinate system 
+%             K = cameraParams.IntrinsicMatrix'; % Matlab stores transpose of camera intrinsic params
+%             Rt = zeros(3,4);
+%             Rt(1:3, 1:3) = R;
+%             Rt(:, 4) = t;
+%             pixelLocations = K * (R * faceVertices' + t');
+%             pixelLocations = bsxfun(@rdivide, pixelLocations, pixelLocations(3,:)); % Divide from last coordinate
+%             pixelLocations(end,:) = []; % make non-homogeneous
+%             
+%             figure(fig2);
+%             x = pixelLocations(1, :)'; y = imageSize(2) - pixelLocations(2, :)';
+%             hold on; plot(x, y, 'r*');
+% %             pause(10);
+            
+            % Same as above code. But matrix multiplcation is done in reverse and with taking transpose.
+            faceHomogeneousCoordinates = ones(3, 4); % Assumption: Each face has 3 vertex. Each vertex has 4 homogeneous coordinates
+            faceHomogeneousCoordinates(1:3, 1:3) = faceVertices;
+            pixelLocations = faceHomogeneousCoordinates * projectionMatrix;
+            pixelLocations = bsxfun(@rdivide, pixelLocations(:, 1:2), pixelLocations(:, 3)); % Divide from last coordinate
             
             figure(fig2);
-            x = pixelLocations(1, :)'; y = imageSize(2) - pixelLocations(2, :)';
+            x = pixelLocations(:, 1); y = pixelLocations(:, 2);
             hold on; plot(x, y, 'r*');
-            pause(10);
-            %% 
+            pause(1);
 
             %% Save all sift feature indices which lie in the projected traingular meshes
 
