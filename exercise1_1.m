@@ -1,4 +1,4 @@
-close all;
+close all; clear all;
 
 %% Import needed paths
 % Add auxiliary_code to directory
@@ -39,7 +39,6 @@ for k = 1:numImages
     fprintf(1, 'Now reading %s\n', fullFileName);
     img = imread(fullFileName);
     imgs(:, :, :, k) = img;
-    break;
 end
 
 %% Load pixel location of the corners
