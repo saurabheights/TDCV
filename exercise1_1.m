@@ -26,7 +26,7 @@ zlim([-10,10]./4);
 texture_dir = './data/images/init_texture/';
 filePattern = fullfile(texture_dir, '*.JPG');
 jpegFiles = dir(filePattern);
-numImages = 1; % length(jpegFiles);
+numImages = length(jpegFiles);
 imgs = zeros(2456, 3680, 3, numImages);
 for k = 1:numImages
     baseFileName = jpegFiles(k).name;
@@ -67,6 +67,15 @@ end
 
 fig2 = figure('Name', 'Image', 'Color', [0.4 0.6 0.7]);
 fig3 = figure('Name', 'SiftIn3D', 'Color', [0.4 0.6 0.7]);
+grid on
+axis equal
+xlabel('X');
+ylabel('Y');
+zlabel('Z');
+xlim([-10,10]./8);
+ylim([-10,10]./8);
+zlim([-10,10]./8);
+hold on; plot3(vertices(:,1),vertices(:,2),vertices(:,3),'r*'); % Plot the vertices of teabox.
 
 %% Compute SIFT features on each image
 for k = 1:numImages % length(jpegFiles) %ToDo - remove length
@@ -149,44 +158,45 @@ for k = 1:numImages % length(jpegFiles) %ToDo - remove length
                     IndicesInTeaImage(siftRandomIndex) = 1;
                 end
             end
+            
+            %% Find indices of sift points and reduce the number to make faster.
+            IndicesInTeaImage = find(IndicesInTeaImage == 1);
+            numOfIndices = min(size(IndicesInTeaImage,2), 50);
+            IndicesInTeaImage = IndicesInTeaImage(1:numOfIndices);
+            
+            %% Plot sift points on the image.
+            figure(fig2); hold on; 
+            plot(f(1, sel(IndicesInTeaImage)), f(2, sel(IndicesInTeaImage)), 'y*');
+            
+
+            %% Project each sift point to plane of teabox triangle
+            % Origin is worldLocation from estimate camera pose.
+            orig =repmat(C, numOfIndices, 1);
+            imageSiftPoints = [f(1, sel(IndicesInTeaImage)); f(2, sel(IndicesInTeaImage))]';
+            worldSiftPoints = pointsToWorld(cameraParams, R, t, imageSiftPoints);
+            dir = zeros(numOfIndices, 3); % ToDo: Why the last coordinate is set to zero? It represents z-plane which lie on the bottom of teabox.
+            dir(:, 1:2) = worldSiftPoints;
+            dir = dir - orig;
+            faceVerticesIndex = faces(faceIndex, :);
+            % Loop for each face
+            vert0 = vertices(faceVerticesIndex(1), :); % 4 represents which face I ran on
+            vert1 = vertices(faceVerticesIndex(2), :);
+            vert2 = vertices(faceVerticesIndex(3), :);
+            [INTERSECT, T, U, V, XCOOR] = TriangleRayIntersection(orig, dir, vert0, vert1, vert2, 'planeType', 'two sided', 'fullReturn', true);
+        %     %% Reject the points which did not intersect with the teabox triangle
+        %     disp(INTERSECT');
+            figure(fig3);
+            hold on; plot3(orig(:,1),orig(:,2),orig(:,3),'b*');
+            dir = dir + orig;
+            hold on; plot3(dir(:,1),dir(:,2),dir(:,3),'g*');
+            hold on; plot3(vert0(:,1),vert0(:,2),vert0(:,3),'b*');
+            hold on; plot3(vert1(:,1),vert1(:,2),vert1(:,3),'b*');
+            hold on; plot3(vert2(:,1),vert2(:,2),vert2(:,3),'b*');
+            hold on; plotCamera('Size',0.1,'Orientation',squeeze(worldOrientations(k, :, :)), 'Location', squeeze(worldLocations(k, :, :)));
+            hold on; scatter3(XCOOR(find(INTERSECT == 1),1), ...
+                XCOOR(find(INTERSECT == 1),2), ...
+                XCOOR(find(INTERSECT == 1),3));
         end
     end
-    figure(fig2);
-    IndicesInTeaImage = find(IndicesInTeaImage == 1);
-    hold on; plot(f(1, sel(IndicesInTeaImage)), f(2, sel(IndicesInTeaImage)), 'y*');
-    
-    %% Reduce the number of indices to plot on 3d
-    IndicesInTeaImage = IndicesInTeaImage(1:min(size(IndicesInTeaImage,2), 50));
-    numOfIndices = size(IndicesInTeaImage, 2);
-
-    %% Project each sift point to plane of teabox triangle
-    % Origin is worldLocation from estimate camera pose.
-    orig =repmat(C, numOfIndices, 1);
-    imageSiftPoints = [f(1, sel(IndicesInTeaImage)); f(2, sel(IndicesInTeaImage))]';
-    worldSiftPoints = pointsToWorld(cameraParams, R, t, imageSiftPoints);
-    dir = zeros(numOfIndices, 3); % ToDo: Why the last coordinate is set to zero?
-    dir(:, 1:2) = worldSiftPoints;
-    dir = dir - orig;
-    triangles = faces(find(facesFacingCameraIndices == 1), :);
-    % Loop for each face
-    vert0 = vertices(triangles(4, 1), :); % 4 represents which face I ran on
-    vert1 = vertices(triangles(4, 2), :);
-    vert2 = vertices(triangles(4, 3), :);
-    [INTERSECT, T, U, V, XCOOR] = TriangleRayIntersection(orig, dir, vert0, vert1, vert2, 'planeType', 'two sided', 'fullReturn', true);
-%     %% Reject the points which did not intersect with the teabox triangle
-%     disp(INTERSECT');
-    figure(fig3);
-    hold on; plot3(vertices(:,1),vertices(:,2),vertices(:,3),'r*');
-    hold on; plot3(orig(:,1),orig(:,2),orig(:,3),'b*');
-    dir = dir + orig;
-    hold on; plot3(dir(:,1),dir(:,2),dir(:,3),'g*');
-    hold on; plot3(vert0(:,1),vert0(:,2),vert0(:,3),'b*');
-    hold on; plot3(vert1(:,1),vert1(:,2),vert1(:,3),'b*');
-    hold on; plot3(vert2(:,1),vert2(:,2),vert2(:,3),'b*');
-    grid on
-    axis equal
-    xlabel('X');    ylabel('Y');    zlabel('Z');
-    hold on; plotCamera('Size',0.1,'Orientation',squeeze(worldOrientations(k, :, :)), 'Location', squeeze(worldLocations(k, :, :)));
-    hold on; scatter3(XCOOR(:,1),XCOOR(:,2),XCOOR(:,3));
 end
 pause(10);
