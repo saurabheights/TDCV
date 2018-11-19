@@ -133,8 +133,7 @@ else
         k = k+1;
       case 'fullreturn'
         %fullReturn = (varargin{k+1}~=0) && (nargout>1);
-        k = double(varargin{k+1});
-        fullReturn = (k~=0);
+        fullReturn = (varargin{k+1}~=0);
         k = k+1;
     end
     k = k+1;

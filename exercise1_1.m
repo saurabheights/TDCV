@@ -9,9 +9,6 @@ addpath('auxiliary_code/');
 faces = faces + 1;
 
 fig1 = figure('Name', 'CameraAndObjectPose', 'Color', [0.4 0.6 0.7]);
-% pcshow only displays 4 points. pcshow(pointCloud(vertex), 'VerticalAxis',
-% 'Z', ...
-%     'VerticalAxisDir', 'Up');
 plot3(vertices(:,1),vertices(:,2),vertices(:,3),'g*');
 grid on
 axis equal
@@ -21,8 +18,6 @@ zlabel('Z');
 xlim([-10,10]./4);
 ylim([-10,10]./4);
 zlim([-10,10]./4);
-hold on;
-hold off;
 
 %% Careful
 %% The vertex index used in ply for a corner, should match the corner index
@@ -48,10 +43,10 @@ load corner_pixel
 %% Create intrinsic matrix
 focalLength = [2960.37845 2960.37845];
 principalPoint = [1841.68855 1235.23369];
-imageSize = [3680 2456]; % See - https://www.mathworks.com/help/vision/ref/cameraintrinsics.html
+imageSize = [2456 3680]; % See - https://www.mathworks.com/help/vision/ref/cameraintrinsics.html
 IntrinsicMatrix = [2960.37845,0,0;0,2960.37845,0;1841.68855,1235.23369,1];
     % generate the camera parameters
-cameraParams = cameraParameters('IntrinsicMatrix', IntrinsicMatrix);
+cameraParams = cameraParameters('IntrinsicMatrix', IntrinsicMatrix, 'ImageSize', imageSize);
 
 %% Estimate world camera pose and display camera pose on same plot.
 worldOrientations= zeros(8, 3, 3);
@@ -65,13 +60,14 @@ for k = 1:numImages
     hold on;
     plotCamera('Size',0.1,'Orientation',worldOrientation, ...
         'Location', worldLocation);
-    hold off;
 end
 
 % Download vlfeat binary package from http://www.vlfeat.org/download.html
-run('vlfeat-0.9.21-bin/toolbox/vl_setup.m');
+% run('vlfeat-0.9.21-bin/toolbox/vl_setup.m');
 
 fig2 = figure('Name', 'Image', 'Color', [0.4 0.6 0.7]);
+fig3 = figure('Name', 'SiftIn3D', 'Color', [0.4 0.6 0.7]);
+
 %% Compute SIFT features on each image
 for k = 1:numImages % length(jpegFiles) %ToDo - remove length
     I = imgs(:, :, :, k);
@@ -83,7 +79,7 @@ for k = 1:numImages % length(jpegFiles) %ToDo - remove length
     f = vl_sift(I) ;
     perm = randperm(size(f,2)) ;
     disp('Truncated sift features to 5000 to reduce the computation');
-    sel = perm(1:5000);
+    sel = perm(1:500);
     IndicesInTeaImage = zeros(1,size(sel, 2));
     
     %% Compute the Projection matrix for kth camera(image)
@@ -93,6 +89,7 @@ for k = 1:numImages % length(jpegFiles) %ToDo - remove length
     projectionMatrix = RT * cameraParams.IntrinsicMatrix;
     
     %% For each triangle made of the vertices on the box
+    facesFacingCameraIndices = zeros(1,size(faces, 1));
     for faceIndex = 1:size(faces, 1)
         %% Check if the plane made from the vertices normal makes < 90 degrees, else continue
         faceVertices = vertices(faces(faceIndex,:), :);
@@ -106,6 +103,8 @@ for k = 1:numImages % length(jpegFiles) %ToDo - remove length
             figure(fig1);
             hold on;
             fill3(faceVertices(:,1),faceVertices(:,2),faceVertices(:,3), [0 , 0, 0.5]);
+            
+            facesFacingCameraIndices(faceIndex) = 1;
 
             %% Compute location of the face vertices in kth camera coordinate system.
             
@@ -143,10 +142,10 @@ for k = 1:numImages % length(jpegFiles) %ToDo - remove length
             s = det([P1-P2;P3-P1]); % https://www.mathworks.com/matlabcentral/answers/277984-check-points-inside-triangle-or-on-edge-with-example
             for siftRandomIndex = 1:size(sel, 2)
                 P = f(1:2, sel(siftRandomIndex))';
-                t = sign(det([P31;P23]))*sign(det([P3-P;P23])) >= 0 & ...
+                flag = sign(det([P31;P23]))*sign(det([P3-P;P23])) >= 0 & ...
                     sign(det([P12;P31]))*sign(det([P1-P;P31])) >= 0 & ...
                     sign(det([P23;P12]))*sign(det([P2-P;P12])) >= 0 ;
-                if t
+                if flag
                     IndicesInTeaImage(siftRandomIndex) = 1;
                 end
             end
@@ -155,9 +154,39 @@ for k = 1:numImages % length(jpegFiles) %ToDo - remove length
     figure(fig2);
     IndicesInTeaImage = find(IndicesInTeaImage == 1);
     hold on; plot(f(1, sel(IndicesInTeaImage)), f(2, sel(IndicesInTeaImage)), 'y*');
+    
+    %% Reduce the number of indices to plot on 3d
+    IndicesInTeaImage = IndicesInTeaImage(1:min(size(IndicesInTeaImage,2), 50));
+    numOfIndices = size(IndicesInTeaImage, 2);
 
     %% Project each sift point to plane of teabox triangle
-%             TriangleRayIntersection('planeType', 'one sided', 'fullReturn', true);
-    %% Reject the points which did not intersect with the teabox triangle
+    % Origin is worldLocation from estimate camera pose.
+    orig =repmat(C, numOfIndices, 1);
+    imageSiftPoints = [f(1, sel(IndicesInTeaImage)); f(2, sel(IndicesInTeaImage))]';
+    worldSiftPoints = pointsToWorld(cameraParams, R, t, imageSiftPoints);
+    dir = zeros(numOfIndices, 3); % ToDo: Why the last coordinate is set to zero?
+    dir(:, 1:2) = worldSiftPoints;
+    dir = dir - orig;
+    triangles = faces(find(facesFacingCameraIndices == 1), :);
+    % Loop for each face
+    vert0 = vertices(triangles(4, 1), :); % 4 represents which face I ran on
+    vert1 = vertices(triangles(4, 2), :);
+    vert2 = vertices(triangles(4, 3), :);
+    [INTERSECT, T, U, V, XCOOR] = TriangleRayIntersection(orig, dir, vert0, vert1, vert2, 'planeType', 'two sided', 'fullReturn', true);
+%     %% Reject the points which did not intersect with the teabox triangle
+%     disp(INTERSECT');
+    figure(fig3);
+    hold on; plot3(vertices(:,1),vertices(:,2),vertices(:,3),'r*');
+    hold on; plot3(orig(:,1),orig(:,2),orig(:,3),'b*');
+    dir = dir + orig;
+    hold on; plot3(dir(:,1),dir(:,2),dir(:,3),'g*');
+    hold on; plot3(vert0(:,1),vert0(:,2),vert0(:,3),'b*');
+    hold on; plot3(vert1(:,1),vert1(:,2),vert1(:,3),'b*');
+    hold on; plot3(vert2(:,1),vert2(:,2),vert2(:,3),'b*');
+    grid on
+    axis equal
+    xlabel('X');    ylabel('Y');    zlabel('Z');
+    hold on; plotCamera('Size',0.1,'Orientation',squeeze(worldOrientations(k, :, :)), 'Location', squeeze(worldLocations(k, :, :)));
+    hold on; scatter3(XCOOR(:,1),XCOOR(:,2),XCOOR(:,3));
 end
 pause(10);
