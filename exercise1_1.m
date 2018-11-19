@@ -6,23 +6,23 @@ addpath('auxiliary_code/');
 
 % Load the teabox.ply
 [vertices,faces] = read_ply('./data/model/teabox.ply');
-faces = faces + 1;
+faces = faces + 1; %Make array 1-indexed.
 
-fig1 = figure('Name', 'CameraAndObjectPose', 'Color', [0.4 0.6 0.7]);
-plot3(vertices(:,1),vertices(:,2),vertices(:,3),'g*');
+fig2d = figure('Name', 'Image', 'Color', [0.4 0.6 0.7]);
+fig3d = figure('Name', 'SiftIn3D', 'Color', [0.4 0.6 0.7]);
 grid on
 axis equal
 xlabel('X');
 ylabel('Y');
 zlabel('Z');
-xlim([-10,10]./4);
-ylim([-10,10]./4);
-zlim([-10,10]./4);
+xlim([-10,10]./8);
+ylim([-10,10]./8);
+zlim([-10,10]./8);
+hold on; plot3(vertices(:,1),vertices(:,2),vertices(:,3),'r*'); % Plot the vertices of teabox.
 
 %% Careful
 %% The vertex index used in ply for a corner, should match the corner index
 %% given to that corner when the corner pixel location is manually selected.
-
 texture_dir = './data/images/init_texture/';
 filePattern = fullfile(texture_dir, '*.JPG');
 jpegFiles = dir(filePattern);
@@ -45,7 +45,8 @@ focalLength = [2960.37845 2960.37845];
 principalPoint = [1841.68855 1235.23369];
 imageSize = [2456 3680]; % See - https://www.mathworks.com/help/vision/ref/cameraintrinsics.html
 IntrinsicMatrix = [2960.37845,0,0;0,2960.37845,0;1841.68855,1235.23369,1];
-    % generate the camera parameters
+
+% generate the camera parameters
 cameraParams = cameraParameters('IntrinsicMatrix', IntrinsicMatrix, 'ImageSize', imageSize);
 
 %% Estimate world camera pose and display camera pose on same plot.
@@ -57,32 +58,17 @@ for k = 1:numImages
     [worldOrientation,worldLocation] = estimateWorldCameraPose(imagePoints,worldPoints, cameraParams, 'MaxReprojectionError',6);
     worldOrientations(k, :, :) = worldOrientation;
     worldLocations(k, :, :) = worldLocation;
-    hold on;
-    plotCamera('Size',0.1,'Orientation',worldOrientation, ...
-        'Location', worldLocation);
 end
 
 % Download vlfeat binary package from http://www.vlfeat.org/download.html
-% run('vlfeat-0.9.21-bin/toolbox/vl_setup.m');
-
-fig2 = figure('Name', 'Image', 'Color', [0.4 0.6 0.7]);
-fig3 = figure('Name', 'SiftIn3D', 'Color', [0.4 0.6 0.7]);
-grid on
-axis equal
-xlabel('X');
-ylabel('Y');
-zlabel('Z');
-xlim([-10,10]./8);
-ylim([-10,10]./8);
-zlim([-10,10]./8);
-hold on; plot3(vertices(:,1),vertices(:,2),vertices(:,3),'r*'); % Plot the vertices of teabox.
+run('vlfeat-0.9.21-bin/toolbox/vl_setup.m');
 
 %% Compute SIFT features on each image
 for k = 1:numImages % length(jpegFiles) %ToDo - remove length
     I = imgs(:, :, :, k);
     
     %% Display Image and compute its sift points.
-    figure(fig2); hold off;
+    figure(fig2d); hold off; % off to remove previous figure content.
     imshow(uint8(I));
     I = single(rgb2gray(uint8(I)));
     f = vl_sift(I) ;
@@ -104,45 +90,40 @@ for k = 1:numImages % length(jpegFiles) %ToDo - remove length
         faceVertices = vertices(faces(faceIndex,:), :);
         faceNormal = cross(faceVertices(1,:) - faceVertices(2,:), ...
             faceVertices(2,:) - faceVertices(3,:));
-        faceToCameraVector = worldLocations(k, :) - ((faceVertices(1,:) + faceVertices(2,:) + ...
-            faceVertices(3,:)) / 3);
+        faceToCameraVector = worldLocations(k, :) - mean(faceVertices,1);
         
         if dot(faceNormal, faceToCameraVector) > 0
-            %% Debug if the faces detected are correct are not. Run this code only for one camera
-            figure(fig1);
-            hold on;
-            fill3(faceVertices(:,1),faceVertices(:,2),faceVertices(:,3), [0 , 0, 0.5]);
-            
             facesFacingCameraIndices(faceIndex) = 1;
-
+            
             %% Compute location of the face vertices in kth camera coordinate system.
             
-            % Below code didnt work. ToDo - Debug this.
-            % Convert to homogeneous coordinate system 
-%             K = cameraParams.IntrinsicMatrix'; % Matlab stores transpose of camera intrinsic params
-%             Rt = zeros(3,4);
-%             Rt(1:3, 1:3) = R;
-%             Rt(:, 4) = t;
-%             pixelLocations = K * (R * faceVertices' + t');
-%             pixelLocations = bsxfun(@rdivide, pixelLocations, pixelLocations(3,:)); % Divide from last coordinate
-%             pixelLocations(end,:) = []; % make non-homogeneous
-%             
-%             figure(fig2);
-%             x = pixelLocations(1, :)'; y = imageSize(2) - pixelLocations(2, :)';
-%             hold on; plot(x, y, 'r*');
-% %             pause(10);
+            % Below code didnt work. ToDo - Debug this. Convert to
+            % homogeneous coordinate system
+            %             K = cameraParams.IntrinsicMatrix'; % Matlab
+            %             stores transpose of camera intrinsic params Rt =
+            %             zeros(3,4); Rt(1:3, 1:3) = R; Rt(:, 4) = t;
+            %             pixelLocations = K * (R * faceVertices' + t');
+            %             pixelLocations = bsxfun(@rdivide, pixelLocations,
+            %             pixelLocations(3,:)); % Divide from last
+            %             coordinate pixelLocations(end,:) = []; % make
+            %             non-homogeneous
+            %
+            %             figure(fig2d); x = pixelLocations(1, :)'; y =
+            %             imageSize(2) - pixelLocations(2, :)'; hold on;
+            %             plot(x, y, 'r*');
+            % %             pause(10);
             
-            % Same as above code. But matrix multiplcation is done in reverse and with taking transpose.
+            % Same as above code. But matrix multiplcation is done in
+            % reverse and with taking transpose.
             faceHomogeneousCoordinates = ones(3, 4); % Assumption: Each face has 3 vertex. Each vertex has 4 homogeneous coordinates
             faceHomogeneousCoordinates(1:3, 1:3) = faceVertices;
             pixelLocations = faceHomogeneousCoordinates * projectionMatrix;
             pixelLocations = bsxfun(@rdivide, pixelLocations(:, 1:2), pixelLocations(:, 3)); % Divide from last coordinate
             
-            figure(fig2);
+            figure(fig2d);
             x = pixelLocations(:, 1); y = pixelLocations(:, 2);
             hold on; plot(x, y, 'r*');
-            pause(1);
-
+            
             %% Save all sift feature indices which lie in the projected traingular meshes
             P1 = pixelLocations(1,:);
             P2 = pixelLocations(2,:);
@@ -165,10 +146,9 @@ for k = 1:numImages % length(jpegFiles) %ToDo - remove length
             IndicesInTeaImage = IndicesInTeaImage(1:numOfIndices);
             
             %% Plot sift points on the image.
-            figure(fig2); hold on; 
+            figure(fig2d); hold on;
             plot(f(1, sel(IndicesInTeaImage)), f(2, sel(IndicesInTeaImage)), 'y*');
             
-
             %% Project each sift point to plane of teabox triangle
             % Origin is worldLocation from estimate camera pose.
             orig =repmat(C, numOfIndices, 1);
@@ -178,25 +158,25 @@ for k = 1:numImages % length(jpegFiles) %ToDo - remove length
             dir(:, 1:2) = worldSiftPoints;
             dir = dir - orig;
             faceVerticesIndex = faces(faceIndex, :);
-            % Loop for each face
-            vert0 = vertices(faceVerticesIndex(1), :); % 4 represents which face I ran on
+            
+            % Find where ray passing through sift points meets the face.
+            vert0 = vertices(faceVerticesIndex(1), :);
             vert1 = vertices(faceVerticesIndex(2), :);
             vert2 = vertices(faceVerticesIndex(3), :);
-            [INTERSECT, T, U, V, XCOOR] = TriangleRayIntersection(orig, dir, vert0, vert1, vert2, 'planeType', 'two sided', 'fullReturn', true);
-        %     %% Reject the points which did not intersect with the teabox triangle
-        %     disp(INTERSECT');
-            figure(fig3);
+            [INTERSECT, T, U, V, XCOOR] = TriangleRayIntersection(orig, dir, vert0, vert1, vert2, 'planeType', 'one sided', 'fullReturn', true);
+            
+            % Display the points.
+            figure(fig3d);
             hold on; plot3(orig(:,1),orig(:,2),orig(:,3),'b*');
-            dir = dir + orig;
-            hold on; plot3(dir(:,1),dir(:,2),dir(:,3),'g*');
             hold on; plot3(vert0(:,1),vert0(:,2),vert0(:,3),'b*');
             hold on; plot3(vert1(:,1),vert1(:,2),vert1(:,3),'b*');
             hold on; plot3(vert2(:,1),vert2(:,2),vert2(:,3),'b*');
             hold on; plotCamera('Size',0.1,'Orientation',squeeze(worldOrientations(k, :, :)), 'Location', squeeze(worldLocations(k, :, :)));
             hold on; scatter3(XCOOR(find(INTERSECT == 1),1), ...
                 XCOOR(find(INTERSECT == 1),2), ...
-                XCOOR(find(INTERSECT == 1),3));
+                XCOOR(find(INTERSECT == 1),3), 2); %
+            pause(2);
         end
     end
+    pause(2);
 end
-pause(10);
