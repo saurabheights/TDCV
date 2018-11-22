@@ -1,5 +1,5 @@
-clear all
-clc
+clear all;
+close all;
 
 % Add auxiliary_code to directory
 addpath('auxiliary_code/');

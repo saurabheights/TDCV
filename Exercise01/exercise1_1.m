@@ -171,12 +171,12 @@ for k = 1:numImages % length(jpegFiles) %ToDo - remove length
             hold on; plot3(vert0(:,1),vert0(:,2),vert0(:,3),'b*');
             hold on; plot3(vert1(:,1),vert1(:,2),vert1(:,3),'b*');
             hold on; plot3(vert2(:,1),vert2(:,2),vert2(:,3),'b*');
-            hold on; plotCamera('Size',0.1,'Orientation',squeeze(worldOrientations(k, :, :)), 'Location', squeeze(worldLocations(k, :, :)));
+            hold on; plotCamera('Size',0.1,'Orientation',squeeze(worldOrientations(k, :, :)), 'Location', squeeze(worldLocations(k, :, :)), 'AxesVisible', true);
             hold on; scatter3(XCOOR(find(INTERSECT == 1),1), ...
                 XCOOR(find(INTERSECT == 1),2), ...
                 XCOOR(find(INTERSECT == 1),3), 2); %
-            pause(2);
+            pause(1);
         end
     end
-    pause(2);
+    pause(1);
 end
