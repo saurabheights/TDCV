@@ -73,7 +73,7 @@ for k = 1:numImages % length(jpegFiles) %ToDo - remove length
     I = single(rgb2gray(uint8(I)));
     f = vl_sift(I) ;
     perm = randperm(size(f,2)) ;
-    disp('Truncated sift features to 5000 to reduce the computation');
+    disp('Truncated sift features to 500 to reduce the computation');
     sel = perm(1:500);
     IndicesInTeaImage = zeros(1,size(sel, 2));
     
