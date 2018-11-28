@@ -61,7 +61,7 @@ for k = 1:numImages
 end
 
 % Download vlfeat binary package from http://www.vlfeat.org/download.html
-run('vlfeat-0.9.21-bin/toolbox/vl_setup.m');
+run('../vlfeat-0.9.21-bin/toolbox/vl_setup.m');
 
 %% Save Sift features decriptors and their location in 3d into a mat for Exercise 2.
 SiftIn3d = struct('featuresf',{},'featuresd',{},'threeDLoc',{})
