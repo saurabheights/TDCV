@@ -63,15 +63,18 @@ end
 % Download vlfeat binary package from http://www.vlfeat.org/download.html
 run('vlfeat-0.9.21-bin/toolbox/vl_setup.m');
 
-%% Compute SIFT features on each image
+%% Save Sift features decriptors and their location in 3d into a mat for Exercise 2.
+SiftIn3d = struct('featuresf',{},'featuresd',{},'threeDLoc',{})
 for k = 1:numImages % length(jpegFiles) %ToDo - remove length
     I = imgs(:, :, :, k);
     
     %% Display Image and compute its sift points.
     figure(fig2d); hold off; % off to remove previous figure content.
     imshow(uint8(I));
+    
+    %% Compute SIFT features on each image
     I = single(rgb2gray(uint8(I)));
-    f = vl_sift(I) ;
+    [f, d] = vl_sift(I) ;
     perm = randperm(size(f,2)) ;
     disp('Truncated sift features to 500 to reduce the computation');
     sel = perm(1:500);
@@ -142,7 +145,7 @@ for k = 1:numImages % length(jpegFiles) %ToDo - remove length
             
             %% Find indices of sift points and reduce the number to make faster.
             IndicesInTeaImage = find(IndicesInTeaImage == 1);
-            numOfIndices = min(size(IndicesInTeaImage,2), 50);
+            numOfIndices = min(size(IndicesInTeaImage,2), 100);
             IndicesInTeaImage = IndicesInTeaImage(1:numOfIndices);
             
             %% Plot sift points on the image.
@@ -174,9 +177,15 @@ for k = 1:numImages % length(jpegFiles) %ToDo - remove length
             hold on; plotCamera('Size',0.1,'Orientation',squeeze(worldOrientations(k, :, :)), 'Location', squeeze(worldLocations(k, :, :)), 'AxesVisible', true);
             hold on; scatter3(XCOOR(find(INTERSECT == 1),1), ...
                 XCOOR(find(INTERSECT == 1),2), ...
-                XCOOR(find(INTERSECT == 1),3), 2); %
+                XCOOR(find(INTERSECT == 1),3), 2);
+            
+            %% Save the features and descriptors for Exercise02.
+            SiftIn3d(1).featuresf = [SiftIn3d.featuresf f(:,sel(IndicesInTeaImage))];
+            SiftIn3d(1).featuresd = [SiftIn3d(1).featuresd d(:,sel(IndicesInTeaImage))];
+            SiftIn3d(1).threeDLoc = [SiftIn3d(1).threeDLoc XCOOR(find(INTERSECT == 1),:)'];
             pause(1);
         end
     end
     pause(1);
 end
+save('../Exercise02/Exercise02-SiftIn3d.mat','SiftIn3d');
