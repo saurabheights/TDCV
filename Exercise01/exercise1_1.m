@@ -75,9 +75,8 @@ for k = 1:numImages % length(jpegFiles) %ToDo - remove length
     %% Compute SIFT features on each image
     I = single(rgb2gray(uint8(I)));
     [f, d] = vl_sift(I) ;
-    perm = randperm(size(f,2)) ;
-    disp('Truncated sift features to 500 to reduce the computation');
-    sel = perm(1:500);
+    sel = randperm(size(f,2)) ;
+    disp('Do not truncate the sift features as we will need them in ex02');
     IndicesInTeaImage = zeros(1,size(sel, 2));
     
     %% Compute the Projection matrix for kth camera(image)
@@ -145,8 +144,9 @@ for k = 1:numImages % length(jpegFiles) %ToDo - remove length
             
             %% Find indices of sift points and reduce the number to make faster.
             IndicesInTeaImage = find(IndicesInTeaImage == 1);
-            numOfIndices = min(size(IndicesInTeaImage,2), 100);
-            IndicesInTeaImage = IndicesInTeaImage(1:numOfIndices);
+            numOfIndices = size(IndicesInTeaImage,2);
+%             numOfIndices = min(size(IndicesInTeaImage,2), 100);
+%             IndicesInTeaImage = IndicesInTeaImage(1:numOfIndices);
             
             %% Plot sift points on the image.
             figure(fig2d); hold on;
@@ -182,7 +182,7 @@ for k = 1:numImages % length(jpegFiles) %ToDo - remove length
             %% Save the features and descriptors for Exercise02.
             SiftIn3d(1).featuresf = [SiftIn3d.featuresf f(:,sel(IndicesInTeaImage))];
             SiftIn3d(1).featuresd = [SiftIn3d(1).featuresd d(:,sel(IndicesInTeaImage))];
-            SiftIn3d(1).threeDLoc = [SiftIn3d(1).threeDLoc XCOOR(find(INTERSECT == 1),:)'];
+            SiftIn3d(1).threeDLoc = [SiftIn3d(1).threeDLoc XCOOR'];
             pause(1);
         end
     end
