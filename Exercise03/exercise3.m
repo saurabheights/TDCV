@@ -90,23 +90,32 @@ projectionMatrix = RT0 * cameraParams.IntrinsicMatrix;
 pixelLocations = vertices * projectionMatrix;
 pixelLocations = bsxfun(@rdivide, pixelLocations(:, 1:2), pixelLocations(:, 3)); % Divide from last coordinate
 
+%% Display box on the image
 figure(f1);
-x = pixelLocations(:, 1); y = pixelLocations(:, 2);
-hold on; plot(x, y, 'r*');
-% Draw the box edges.
-hold on; line(pixelLocations(1:2, 1), pixelLocations(1:2, 2));
-hold on; line(pixelLocations(2:3, 1), pixelLocations(2:3, 2));
-hold on; line(pixelLocations(3:4, 1), pixelLocations(3:4, 2));
-hold on; line(pixelLocations([1,4], 1), pixelLocations([1,4], 2));
-hold on; line(pixelLocations([5,6], 1), pixelLocations([5,6], 2));
-hold on; line(pixelLocations([6,7], 1), pixelLocations([6,7], 2));
-hold on; line(pixelLocations([7,8], 1), pixelLocations([7,8], 2));
-hold on; line(pixelLocations([5,8], 1), pixelLocations([5,8], 2));
-hold on; line(pixelLocations([1,5], 1), pixelLocations([1,5], 2));
-hold on; line(pixelLocations([2,6], 1), pixelLocations([2,6], 2));
-hold on; line(pixelLocations([3,7], 1), pixelLocations([3,7], 2));
-hold on; line(pixelLocations([4,8], 1), pixelLocations([4,8], 2));
-hold off;
+draw_box(pixelLocations);
+
+%% save output image
 F = getframe;
 fullFileName = fullfile(OUTDIR, '1.png');
 imwrite(F.cdata, char(fullFileName));
+
+
+function draw_box(pixelLocations)
+% Draws the vertices and edges of teabox on the image
+    x = pixelLocations(:, 1); y = pixelLocations(:, 2);
+    hold on; plot(x, y, 'r*');
+    % Draw the box edges.
+    hold on; line(pixelLocations(1:2, 1), pixelLocations(1:2, 2));
+    hold on; line(pixelLocations(2:3, 1), pixelLocations(2:3, 2));
+    hold on; line(pixelLocations(3:4, 1), pixelLocations(3:4, 2));
+    hold on; line(pixelLocations([1,4], 1), pixelLocations([1,4], 2));
+    hold on; line(pixelLocations([5,6], 1), pixelLocations([5,6], 2));
+    hold on; line(pixelLocations([6,7], 1), pixelLocations([6,7], 2));
+    hold on; line(pixelLocations([7,8], 1), pixelLocations([7,8], 2));
+    hold on; line(pixelLocations([5,8], 1), pixelLocations([5,8], 2));
+    hold on; line(pixelLocations([1,5], 1), pixelLocations([1,5], 2));
+    hold on; line(pixelLocations([2,6], 1), pixelLocations([2,6], 2));
+    hold on; line(pixelLocations([3,7], 1), pixelLocations([3,7], 2));
+    hold on; line(pixelLocations([4,8], 1), pixelLocations([4,8], 2));
+    hold off;
+end
