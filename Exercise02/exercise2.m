@@ -7,7 +7,7 @@ addpath('../Exercise01/auxiliary_code/');
 vertices = [vertices ones(1, 8)']; % Make homogeneous
 
 fig3d = figure('Name', 'SiftIn3D', 'Color', [0.4 0.6 0.7]); set(gcf,'Visible', 'off');
-grid on;axis equal;xlabel('X');;ylabel('Y');zlabel('Z');xlim([-10,10]./8);ylim([-10,10]./8);zlim([-10,10]./8);
+grid on;axis equal;xlabel('X');ylabel('Y');zlabel('Z');xlim([-10,10]./8);ylim([-10,10]./8);zlim([-10,10]./8);
 hold on; plot3(vertices(:,1),vertices(:,2),vertices(:,3),'r*'); % Plot the vertices of teabox.            
 
 % Download vlfeat binary package from http://www.vlfeat.org/download.html
