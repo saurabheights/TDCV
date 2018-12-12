@@ -6,7 +6,6 @@ addpath('../Exercise01/auxiliary_code/');
 [vertices,faces] = read_ply('../Exercise01/data/model/teabox.ply');
 verticesHomogeneous = [vertices ones(1, 8)']; % Make homogeneous
 
-figurePlotMatch = figure('Name', 'figurePlotMatch');
 fig3d = figure('Name', 'SiftIn3D', 'Color', [0.4 0.6 0.7]); set(gcf,'Visible', 'off');
 grid on;axis equal;xlabel('X');ylabel('Y');zlabel('Z');xlim([-10,10]./4);ylim([-10,10]./4);zlim([-10,10]./4);
 hold on; plot3(verticesHomogeneous(:,1),verticesHomogeneous(:,2),verticesHomogeneous(:,3),'r*'); % Plot the vertices of teabox.            
@@ -46,9 +45,9 @@ OUTDIR = 'output/' + OUTDIR;
 figure2d = figure();
 
 %% Detect object in the first image
-
+startFrame = 1;
 %% Read the first color image
-fullFileName = fullfile(color_images_dir, jpegFiles(1).name);
+fullFileName = fullfile(color_images_dir, jpegFiles(startFrame).name);
 fprintf(1, 'Now reading %s\n', fullFileName);
 img0 = imread(fullFileName);
 figure(figure2d);
@@ -97,7 +96,7 @@ draw_box(pixelLocations);
 
 %% save output image
 F = getframe;
-fullFileName = fullfile(OUTDIR, '1.png');
+fullFileName = fullfile(OUTDIR, sprintf('%d.png', startFrame));
 imwrite(F.cdata, char(fullFileName));
 
 %% Exercise 3 - Starts here
@@ -107,7 +106,7 @@ worldOrientation0 = worldOrientation;
 worldLocation0 = worldLocation;
 
 %% Main tracking for all images except first
-for k = 2:numImages
+for k = startFrame+1:numImages
     %% Read the color image
     baseFileName = jpegFiles(k).name;
     fullFileName = fullfile(color_images_dir, baseFileName);
@@ -139,9 +138,6 @@ for k = 2:numImages
     
     M = M(matches(1,:), :);
     m = f1(1:2, matches(2,:))';
-    
-    %% Plot the matches
-    plotMatches(figurePlotMatch, img0, img1, fWorld, f1, matches);
     
     %% LM Algo - Compute new trajectory using previous pose as initial point
     %% Output needed: worldOrientation1, worldLocation1
@@ -186,14 +182,6 @@ function [err] = energy(point2D, point3D, R, T, A)
     pixelLocations1 = point3DHomogeneous * projectionMatrix1;
     pixelLocations1 = bsxfun(@rdivide, pixelLocations1(:, 1:2), pixelLocations1(:, 3));
     err = sqrt(sum((pixelLocations1 - point2D).^2,2));
-%     sizeP = size(point2D,1);
-%     err = zeros(sizeP,1);
-%     projectionMatrix = A*[R, T'];
-%     for i = 1:sizeP(1)
-%         proj2D = projectionMatrix * [point3D(i,:),1]';
-%         proj2D = proj2D/proj2D(3);
-%         err(i) = (point2D(i,1) - proj2D(1))^2 + (point2D(i,2) - proj2D(2))^2;
-%     end
 end
 
 %% Function to compute residual for all 2d-3d correspondences
@@ -203,26 +191,20 @@ function [res] = residual(point2D, point3D, R, T, A)
     pixelLocations1 = point3DHomogeneous * projectionMatrix1;
     pixelLocations1 = bsxfun(@rdivide, pixelLocations1(:, 1:2), pixelLocations1(:, 3));
     res = reshape((pixelLocations1 - point2D)',1,[])';
-    
-%     sizeP = size(point2D, 1);
-%     res = zeros(sizeP*2,1);
-%     projectionMatrix = A*[R, T'];    
-%     for i = 1:sizeP
-%         proj2D = projectionMatrix * [point3D(i,:),1]';
-%         proj2D = proj2D/proj2D(3);
-%         res(2*i-1:2*i) = [( proj2D(1) - point2D(i,1) ); ( proj2D(2) - point2D(i,2) )];
-%     end
 end
 
 function [Rnew, Tnew] = GradientDescent(M, m, R0, t0, cameraParams, iterations, updateThreshold)
     rotation = rotationMatrixToVector(R0);
     res = [rotation, t0];
-    lambda = 0.00000001;
     update = updateThreshold + 1; % Any value higher than convergence criterion
     iter = 1;
     Rnew = R0;
     Tnew = t0;
     A = cameraParams.IntrinsicMatrix';
+    
+    % Compute Jacobian to compute damping factor
+    J = jacobian(M, Rnew, res(1:3), Tnew, A);
+    dampingCoeff = 10e-2 * max(diag(J'*J));
     while iter <= iterations && update > updateThreshold
         % Compute Jacobian
         J = jacobian(M, Rnew, res(1:3), Tnew, A);
@@ -231,13 +213,13 @@ function [Rnew, Tnew] = GradientDescent(M, m, R0, t0, cameraParams, iterations, 
         resid = residual(m, M, Rnew, Tnew, A);
         
         % Compute Update
-        delta = - (2*lambda*J'*resid)';
+        delta = - (2*dampingCoeff*J'*resid)';
         res_new = res + delta;
         e = energy(m, M, Rnew, Tnew, A);
         error_new = energy(m, M, rotationVectorToMatrix(res_new(1:3)), res_new(4:6), A);
         
         if abs(sum(error_new)) > abs(sum(e))
-            lambda = lambda/2;
+            dampingCoeff = dampingCoeff/2;
         else
             res = res_new;
             Rnew = rotationVectorToMatrix(res(1:3));
@@ -252,41 +234,91 @@ end
 function [Rnew, Tnew] = LM(M, m, R0, t0, cameraParams, iterations, updateThreshold)
     rotation = rotationMatrixToVector(R0);
     res = [rotation, t0];
-    lambda = 0.00001;
     update = updateThreshold + 1; % Any value higher than convergence criterion
     iter = 1;
     Rnew = R0;
     Tnew = t0;
     A = cameraParams.IntrinsicMatrix';
-    while iter <= iterations && update > updateThreshold
-        % Compute Jacobian
-        J = jacobian(M, Rnew, res(1:3), Tnew, A);
-        
-        % Compute Residual
-        resid = residual(m, M, Rnew, Tnew, A);
-        
+    c = 4.685;
+    
+    % Compute Jacobian
+    J = jacobian(M, Rnew, res(1:3), Tnew, A);
+    dampingCoeff = 10e-2 * max(diag(J'*J));
+
+    % Compute Residual
+    resid = residual(m, M, Rnew, Tnew, A);
+    W = calculateWeights(resid, c);
+    JtWJ = J' * W * J;
+    
+    while iter <= iterations && update > updateThreshold                
         % Compute Update
-        delta = - (2*lambda*J'*resid)';
-        delta = -inv(J' * J + lambda*eye(6)) * J' * resid;
-        res_new = res + delta';
+        delta = (JtWJ + dampingCoeff*eye(6)) \(J') * W *resid;
+        res_new = res - delta';
         e = energy(m, M, Rnew, Tnew, A);
         error_new = energy(m, M, rotationVectorToMatrix(res_new(1:3)), res_new(4:6), A);
-        if abs(sum(error_new)) > abs(sum(e))
-            lambda = 10 * lambda;
+        
+        %% If damping factor goes Nan, error_new will have NaN
+        if (sum(isnan(error_new(:))) > 0)
+            fprintf('%d | %.8f | %.8f\n', iter, abs(sum(e)), abs(sum(error_new)));
+            break;
+        end
+        
+        if (abs(sum(error_new)) > abs(sum(e))) 
+            dampingCoeff = 10 * dampingCoeff;
         else
-            lambda = lambda / 10;
+            dampingCoeff = dampingCoeff / 10;
             res = res_new;
             Rnew = rotationVectorToMatrix(res(1:3));
             Tnew = res(4:6);
             update = norm(delta);
+            
+            % Update Jacobian and Residual
+            J = jacobian(M, Rnew, res(1:3), Tnew, A);
+            resid = residual(m, M, Rnew, Tnew, A);
+            W = calculateWeights(resid, c);
+            JtWJ = J' * W * J;
+            
             iter = iter + 1;
         end
     fprintf('%d | %.8f | %.8f\n', iter, abs(sum(e)), abs(sum(error_new)));
     end
 end
 
+function [final_weights] = calculateWeights(resid, c)
+    resid_size = size(resid);
+    resid_x = resid(1:2:resid_size);
+    resid_y = resid(2:2:resid_size);
+
+    median_resid_x = median(resid_x, 1);
+    median_resid_y = median(resid_y, 1);
+    sigma_x = 1.48257968 * mad(resid_x, 1);
+    sigma_y = 1.48257968 * mad(resid_y, 1);
+
+    %Compute weights
+    weights = [];
+    for j = 1:resid_size
+        if mod(j,2) == 0
+            val = (resid(j) - median_resid_y) /sigma_y;
+        else
+            val = (resid(j) - median_resid_x) /sigma_x;
+        end
+
+        if abs(val) < c
+            w = (1 - (val/c)^2)^2;
+        else
+            w = 0;
+        end
+        weights = [weights; w];
+    end
+    
+    final_weights = diag(weights);
+end
+
 function [Jac] = jacobian(point3D, R, Rexp, T, A)
     Jac = [];
+    %% estimateWorldCameraPose returns orientation which when converted to 
+    % extrinsics using cameraPoseToExtrinsics gives Rotation transpose*.
+    R = R'; 
     sizePoints = size(point3D);
     
     for j = 1:sizePoints(1)
@@ -338,23 +370,4 @@ function draw_box(pixelLocations)
     hold on; line(pixelLocations([3,7], 1), pixelLocations([3,7], 2));
     hold on; line(pixelLocations([4,8], 1), pixelLocations([4,8], 2));
     hold off;
-end
-
-function [] = plotMatches(figurePlotMatch, Ia, Ib, fa, fb, matches)
-    figure(figurePlotMatch) ; clf ;
-    imagesc(cat(2, rgb2gray(int64(Ia)), rgb2gray(int64(Ib)))) ;
-
-    xa = fa(1,matches(1,:)) ;
-    xb = fb(1,matches(2,:)) + size(Ia,2) ;
-    ya = fa(2,matches(1,:)) ;
-    yb = fb(2,matches(2,:)) ;
-
-    hold on ;
-    h = line([xa ; xb], [ya ; yb]) ;
-    set(h,'linewidth', 0.00001, 'color', 'b') ;
-
-    vl_plotframe(fa(:,matches(1,:))) ;
-    fb(1,:) = fb(1,:) + size(Ia,2) ;
-    vl_plotframe(fb(:,matches(2,:))) ;
-    axis image off ;
 end
