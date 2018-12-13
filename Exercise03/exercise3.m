@@ -133,8 +133,6 @@ for k = startFrame+1:numImages
         matches = sortedMatches(1:2, 1:MinimumMatchesToKeep);
         disp('Truncated matching sift pairs to ' + string(MinimumMatchesToKeep) + '  only.');
     end
-    displacement = sqrt(sum((fWorld(1:2, matches(1,:)) - f1(1:2, matches(2,:)))'.^2, 2)');
-    matches = matches(:, find(displacement < 2 * mean(displacement)));
     
     M = M(matches(1,:), :);
     m = f1(1:2, matches(2,:))';
@@ -173,6 +171,8 @@ for k = startFrame+1:numImages
     R0 = R1;
     t0 = t1;
     img0 = img1;
+    
+    pause(1);
 end
 
 %% Function to compute reprojection error for all 2d-3d correspondences
@@ -312,6 +312,27 @@ function [final_weights] = calculateWeights(resid, c)
     end
     
     final_weights = diag(weights);
+end
+
+function estimate = m_estimator(error, c)
+    error_size = size(error);
+    
+    % See slides 
+    % http://statweb.stanford.edu/~jtaylo/courses/stats203/notes/robust.pdf
+    % http://users.stat.umn.edu/~sandy/courses/8053/handouts/robust.pdf
+    % https://www.ethz.ch/content/dam/ethz/special-interest/math/statistics/sfs/Education/Advanced%20Studies%20in%20Applied%20Statistics/course-material/robust-nonlinear/robstat16E.pdf
+    median_abs_error = 1.48257968 * median(abs(error));
+    error = error / median_abs_error;
+%     mad_error = mad(error, 1);
+%     error = (abs(error) - median_abs_error) / mad_error; % Normalize error
+    estimate = c^2 / 6 *  ones(error_size(1), 1);
+
+    %Compute Tukey error
+    for e_index=1:error_size(1)
+        if abs(error(e_index)) <= c
+            estimate(e_index) = c^2 / 6 * (1 - (1 - (error(e_index) / c)^2)^3);
+        end
+    end
 end
 
 function [Jac] = jacobian(point3D, R, Rexp, T, A)
