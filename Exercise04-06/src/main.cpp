@@ -1,9 +1,12 @@
 #include <opencv2/opencv.hpp>
 #include <HogVisualization.h>
+#include <RandomForest.h>
 #include <iomanip>
 #include <sstream>
+#include <random>
 using namespace cv;
 using namespace std;
+
 
 HOGDescriptor createHogDescriptor(Size winSize)
 {
@@ -116,11 +119,7 @@ vector<vector<pair<int, cv::Mat>>> loadTask2Dataset()
     return fullDataset;
 }
 
-void task2()
-{
-    // Load all the images
-    vector<vector<pair<int, cv::Mat>>> dataset = loadTask2Dataset();
-
+cv::Ptr<cv::ml::DTrees> trainDecisionTree(vector<pair<int, cv::Mat>>& trainingImagesLabelVector) {
     // Create the model
     cv::Ptr<cv::ml::DTrees> model = cv::ml::DTrees::create();
     model->setCVFolds(0);  // set num cross validation folds - Not implemented in OpenCV
@@ -133,7 +132,6 @@ void task2()
     cout << "Minimum Sample Count: " << model->getMinSampleCount() << endl;
 
     // Compute Hog Features for all the training images
-    vector<pair<int, cv::Mat>> trainingImagesLabelVector = dataset.at(0);
     Size winSize(128, 128);
     HOGDescriptor hog = createHogDescriptor(winSize);
     Size winStride(8, 8);
@@ -160,16 +158,28 @@ void task2()
         // cout << "New size of training labels" << labels.size() << endl;
     }
 
-    // cout << "Features Rows is: " << feats.rows << endl;
-    // cout << "Labels Size is: " << labels.size() << endl;
-
-    // Train model
     cv::Ptr<cv::ml::TrainData> trainData = ml::TrainData::create(feats, ml::ROW_SAMPLE, labels);
     model->train(trainData);
+    return model;
+}
+
+void task2Basic()
+{
+    // Load all the images
+    vector<vector<pair<int, cv::Mat>>> dataset = loadTask2Dataset();
+    vector<pair<int, cv::Mat>> trainingImagesLabelVector = dataset.at(0);
+
+    // Train model
+    cv::Ptr<cv::ml::DTrees> model = trainDecisionTree(trainingImagesLabelVector);
 
     // Predict on test dataset
     vector<pair<int, cv::Mat>> testImagesLabelVector = dataset.at(1);
     float accuracy = 0;
+    Size winSize(128, 128);
+    HOGDescriptor hog = createHogDescriptor(winSize);
+    Size winStride(8, 8);
+    Size padding(0, 0);
+
     for(size_t i = 0; i < testImagesLabelVector.size(); i++) {
         cv::Mat inputImage = testImagesLabelVector.at(i).second;
         cv::Mat resizedInputImage = resizeToBoundingBox(inputImage, winSize);
@@ -191,21 +201,72 @@ void task2()
     cout << "==================================================" << endl;
 }
 
+void task2()
+{
+    // Load all the images
+    vector<vector<pair<int, cv::Mat>>> dataset = loadTask2Dataset();
+    vector<pair<int, cv::Mat>> trainingImagesLabelVector = dataset.at(0);
+    
+    // Create model
+    int numberOfClasses = 6;
+    int numberOfDTrees = 40;
+    Size winSize(128, 128);
+    cv::Ptr<RandomForest> randomForest = RandomForest::create(numberOfClasses, numberOfDTrees, winSize);
+
+    // Train the model
+    Size winStride(8, 8);
+    Size padding(0, 0);
+    float subsetPercentage = 50.0f;
+    randomForest->train(trainingImagesLabelVector, subsetPercentage, winStride, padding);
+    
+    // Predict on test dataset
+    vector<pair<int, cv::Mat>> testImagesLabelVector = dataset.at(1);
+    float accuracy = 0;
+    float accuracyPerClass[6] = {0};
+    for(size_t i = 0; i < testImagesLabelVector.size(); i++) {
+        cv::Mat testImage = testImagesLabelVector.at(i).second;
+        Prediction prediction = randomForest->predict(testImage, winStride, padding);
+
+        // Store the features and labels for model training.
+        // cout << i << ": Expected: " << testImagesLabelVector.at(i).first << ", Found: " << prediction.label << endl ;
+        if(testImagesLabelVector.at(i).first == prediction.label)
+        {
+            accuracy += 1;
+            accuracyPerClass[prediction.label] += 1;
+        }
+    }
+
+    cout << "==================================================" << endl;
+    cout << "TASK 2 - Random Forest Accuracy is: [" << accuracy/testImagesLabelVector.size() <<"]." << endl;
+    
+    int numberOfTrainImages[6] = {49, 67, 42, 53, 67, 110};
+    int numberOfTestImages[6] = {10, 10, 10, 10, 10, 10};
+    for(size_t i = 0; i < numberOfClasses; i++)
+    {
+        cout << "Class " << i << " accuracy: [" << accuracyPerClass[i] / numberOfTestImages[i] <<"]." << endl;
+    }
+    cout << "==================================================" << endl;
+}
+
 int main()
 {
     // Task 1
     task1();
-    // waitKey(0);
+    waitKey(1000);
     destroyAllWindows();
 
     // Task 2
+    task2Basic();
+    waitKey(1000);
+    destroyAllWindows();
+
     task2();
-    waitKey(0);
+    waitKey(1000);
     destroyAllWindows();
 
     // Task 3
-
-    waitKey(0);
-    destroyAllWindows();
+    // task3();
+    // waitKey(0);
+    // destroyAllWindows();
     return 0;
 }

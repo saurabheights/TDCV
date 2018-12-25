@@ -13,11 +13,13 @@ include_directories(${OPENCV_INCLUDE_DIR})
 
 include_directories(${PROJECT_SOURCE_DIR}/include)
 set(HEADER_FILES
-        include/HogVisualization.h)
+        include/HogVisualization.h
+        include/RandomForest.h)
 
 set(SOURCE_FILES
         src/main.cpp
-        src/HogVisualization.cpp)
+        src/HogVisualization.cpp
+        src/RandomForest.cpp)
 
 add_executable(HogBasedObjectDetection ${HEADER_FILES} ${SOURCE_FILES})
 target_link_libraries(HogBasedObjectDetection ${OpenCV_LIBRARIES})
