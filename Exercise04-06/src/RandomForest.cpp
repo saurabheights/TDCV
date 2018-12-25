@@ -104,7 +104,7 @@ void RandomForest::train(vector<pair<int, cv::Mat>> &trainingImagesLabelVector,
                          Size winStride,
                          Size padding)
 {
-    bool undersampling = false;
+    bool undersampling = true;
     // Train each decision tree
     for (size_t i = 0; i < m_numberOfDTrees; i++)
     {
