@@ -4,7 +4,7 @@
 #include <vector>
 #include <opencv2/opencv.hpp>
 #include <utility>
-#include <random>    // For std::mt19937, std::random_device
+#include <random> // For std::mt19937, std::random_device
 using namespace std;
 using namespace cv;
 
@@ -32,9 +32,10 @@ private:
                                             Size winStride,
                                             Size padding);
   cv::Mat resizeToBoundingBox(cv::Mat &inputImage);
-  vector<pair<int, cv::Mat>> 
+  vector<pair<int, cv::Mat>>
   generateTrainingImagesLabelSubsetVector(vector<pair<int, cv::Mat>> &trainingImagesLabelVector,
-                                          float subsetPercentage);
+                                          float subsetPercentage,
+                                          bool undersampling);
 
 public:
   static cv::Ptr<RandomForest> create(int numberOfClasses,

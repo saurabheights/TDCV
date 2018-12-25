@@ -42,35 +42,50 @@ vector<int> RandomForest::getRandomUniqueIndices(int start, int end, int numOfSa
 }
 
 vector<pair<int, cv::Mat>> RandomForest::generateTrainingImagesLabelSubsetVector(vector<pair<int, cv::Mat>> &trainingImagesLabelVector,
-                                                                                 float subsetPercentage)
+                                                                                 float subsetPercentage,
+                                                                                 bool undersampling)
 {
+
     vector<pair<int, cv::Mat>> trainingImagesLabelSubsetVector;
-    int minimumClassSamples[m_numberOfClasses];
-    for (size_t i = 0; i < m_numberOfClasses; i++)
-        minimumClassSamples[i] = 0;
 
     // Compute minimum number of samples a class label has.
-    for (auto &&trainingSample : trainingImagesLabelVector)
-        minimumClassSamples[trainingSample.first]++;
-    int minimumSample = minimumClassSamples[0];
-    for (size_t i = 1; i < m_numberOfClasses; i++)
-        if (minimumClassSamples[i] < minimumSample)
-            minimumSample = minimumClassSamples[i];
+    int minimumSample = trainingImagesLabelVector.size(); // A high enough value
 
-    // Compute how many samples to choose for each label for random subset.
-    int numOfElements = (subsetPercentage * minimumSample) / 100;
-    trainingImagesLabelSubsetVector.reserve(numOfElements * 6);
+    if (undersampling)
+    {
+        int minimumClassSamples[m_numberOfClasses];
+        for (size_t i = 0; i < m_numberOfClasses; i++)
+            minimumClassSamples[i] = 0;
+        for (auto &&trainingSample : trainingImagesLabelVector)
+            minimumClassSamples[trainingSample.first]++;
+        for (size_t i = 1; i < m_numberOfClasses; i++)
+            if (minimumClassSamples[i] < minimumSample)
+                minimumSample = minimumClassSamples[i];
+    }
 
     int count[m_numberOfClasses];
     for (size_t label = 0; label < m_numberOfClasses; label++)
     {
         count[label] = 0;
+
         // Create a subset vector for all the samples with class label.
         vector<pair<int, cv::Mat>> temp;
         temp.reserve(100);
         for (auto &&sample : trainingImagesLabelVector)
             if (sample.first == label)
                 temp.push_back(sample);
+
+        // Compute how many samples to choose for each label for random subset.
+        int numOfElements;
+        if (undersampling)
+        {
+            numOfElements = (subsetPercentage * minimumSample) / 100;
+            trainingImagesLabelSubsetVector.reserve(numOfElements * 6);
+        }
+        else
+        {
+            numOfElements = (temp.size() * subsetPercentage) / 100;
+        }
 
         // Filter numOfElements elements from temp and append to trainingImagesLabelSubsetVector
         vector<int> randomUniqueIndices = getRandomUniqueIndices(0, temp.size(), numOfElements);
@@ -89,12 +104,14 @@ void RandomForest::train(vector<pair<int, cv::Mat>> &trainingImagesLabelVector,
                          Size winStride,
                          Size padding)
 {
+    bool undersampling = false;
     // Train each decision tree
     for (size_t i = 0; i < m_numberOfDTrees; i++)
     {
         // cout << "Training decision tree: " << i+1 << " of " << m_numberOfDTrees << ".\n";
         vector<pair<int, cv::Mat>> trainingImagesLabelSubsetVector = generateTrainingImagesLabelSubsetVector(trainingImagesLabelVector,
-                                                                                                             subsetPercentage);
+                                                                                                             subsetPercentage,
+                                                                                                             undersampling);
         cv::Ptr<cv::ml::DTrees> model = trainDecisionTree(trainingImagesLabelSubsetVector,
                                                           winStride,
                                                           padding);
@@ -133,7 +150,7 @@ Prediction RandomForest::predict(cv::Mat testImage,
         else if (labelCounts[label] > labelCounts[maxCountLabel])
             maxCountLabel = label;
     }
-    
+
     return Prediction{.label = maxCountLabel, .confidence = (labelCounts[maxCountLabel] * 1.0f) / m_numberOfDTrees};
 }
 
@@ -144,9 +161,9 @@ cv::Ptr<cv::ml::DTrees> RandomForest::trainDecisionTree(vector<pair<int, cv::Mat
     // Create the model
     cv::Ptr<cv::ml::DTrees> model = cv::ml::DTrees::create();
     // See https://docs.opencv.org/3.0-beta/modules/ml/doc/decision_trees.html#dtrees-params
-    model->setCVFolds(0); // set num cross validation folds - Not implemented in OpenCV
-    model->setMaxCategories(10);  // set max number of categories
-    model->setMaxDepth(20);       // set max tree depth
+    model->setCVFolds(0);        // set num cross validation folds - Not implemented in OpenCV
+    model->setMaxCategories(10); // set max number of categories
+    model->setMaxDepth(20);      // set max tree depth
     model->setMinSampleCount(2); // set min sample count
     // ToDo - Tweak this
     // cout << "Number of cross validation folds are: " << model->getCVFolds() << endl;
