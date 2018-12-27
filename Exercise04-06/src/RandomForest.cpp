@@ -41,6 +41,38 @@ vector<int> RandomForest::getRandomUniqueIndices(int start, int end, int numOfSa
     return std::vector<int>(indices.begin(), indices.begin() + numOfSamples);
 }
 
+vector<cv::Mat> RandomForest::augmentImage(cv::Mat &inputImage)
+{
+    vector<cv::Mat> augmentations;
+    cv::Mat currentImage = inputImage;
+    cv::Mat rotatedImage, flippedImage;
+    for (size_t j = 0; j < 4; j++)
+    {
+        if (j == 0)
+        {
+            rotatedImage = currentImage;
+        }
+        else
+        {
+            cv::rotate(currentImage, rotatedImage, cv::ROTATE_90_CLOCKWISE);
+            augmentations.push_back(rotatedImage);
+        }
+
+        for (int i = 0; i <= 1; i++)
+        {
+            cv::flip(rotatedImage, flippedImage, i);
+            augmentations.push_back(flippedImage);
+            // cv::Mat dest;
+            // cv::vconcat(rotatedImage, flippedImage, dest);
+            // cv::imshow("AugmentedImage", dest);
+            // cv::waitKey(5000);
+        }
+        currentImage = rotatedImage;
+    }
+    
+    return augmentations;
+}
+
 vector<pair<int, cv::Mat>> RandomForest::generateTrainingImagesLabelSubsetVector(vector<pair<int, cv::Mat>> &trainingImagesLabelVector,
                                                                                  float subsetPercentage,
                                                                                  bool undersampling)
@@ -63,11 +95,8 @@ vector<pair<int, cv::Mat>> RandomForest::generateTrainingImagesLabelSubsetVector
                 minimumSample = minimumClassSamples[i];
     }
 
-    int count[m_numberOfClasses];
     for (size_t label = 0; label < m_numberOfClasses; label++)
     {
-        count[label] = 0;
-
         // Create a subset vector for all the samples with class label.
         vector<pair<int, cv::Mat>> temp;
         temp.reserve(100);
@@ -80,7 +109,6 @@ vector<pair<int, cv::Mat>> RandomForest::generateTrainingImagesLabelSubsetVector
         if (undersampling)
         {
             numOfElements = (subsetPercentage * minimumSample) / 100;
-            trainingImagesLabelSubsetVector.reserve(numOfElements * 6);
         }
         else
         {
@@ -91,8 +119,8 @@ vector<pair<int, cv::Mat>> RandomForest::generateTrainingImagesLabelSubsetVector
         vector<int> randomUniqueIndices = getRandomUniqueIndices(0, temp.size(), numOfElements);
         for (size_t j = 0; j < randomUniqueIndices.size(); j++)
         {
-            trainingImagesLabelSubsetVector.push_back(temp.at(randomUniqueIndices.at(j)));
-            count[temp.at(randomUniqueIndices.at(j)).first]++;
+            pair<int, cv::Mat> subsetSample = temp.at(randomUniqueIndices.at(j));
+            trainingImagesLabelSubsetVector.push_back(subsetSample);
         }
     }
 
@@ -102,16 +130,36 @@ vector<pair<int, cv::Mat>> RandomForest::generateTrainingImagesLabelSubsetVector
 void RandomForest::train(vector<pair<int, cv::Mat>> &trainingImagesLabelVector,
                          float subsetPercentage,
                          Size winStride,
-                         Size padding)
+                         Size padding,
+                         bool undersampling,
+                         bool augment)
 {
-    bool undersampling = true;
+    // Augment the dataset
+    vector<pair<int, cv::Mat>> augmentedTrainingImagesLabelVector;
+    augmentedTrainingImagesLabelVector.reserve(trainingImagesLabelVector.size() * 8);
+    if (augment)
+    {
+        for(auto&& trainingImagesLabelSample : trainingImagesLabelVector)
+        {
+            vector<cv::Mat> augmentedImages = augmentImage(trainingImagesLabelSample.second);
+            for (auto &&augmentedImage : augmentedImages)
+            {
+                augmentedTrainingImagesLabelVector.push_back(pair<int, cv::Mat>(trainingImagesLabelSample.first, augmentedImage));
+            }
+        }
+    } else {
+        augmentedTrainingImagesLabelVector = trainingImagesLabelVector;
+    }
+
     // Train each decision tree
     for (size_t i = 0; i < m_numberOfDTrees; i++)
     {
-        // cout << "Training decision tree: " << i+1 << " of " << m_numberOfDTrees << ".\n";
-        vector<pair<int, cv::Mat>> trainingImagesLabelSubsetVector = generateTrainingImagesLabelSubsetVector(trainingImagesLabelVector,
-                                                                                                             subsetPercentage,
-                                                                                                             undersampling);
+        cout << "Training decision tree: " << i + 1 << " of " << m_numberOfDTrees << ".\n";
+        vector<pair<int, cv::Mat>> trainingImagesLabelSubsetVector =
+            generateTrainingImagesLabelSubsetVector(augmentedTrainingImagesLabelVector,
+                                                    subsetPercentage,
+                                                    undersampling);
+
         cv::Ptr<cv::ml::DTrees> model = trainDecisionTree(trainingImagesLabelSubsetVector,
                                                           winStride,
                                                           padding);
@@ -119,7 +167,7 @@ void RandomForest::train(vector<pair<int, cv::Mat>> &trainingImagesLabelVector,
     }
 }
 
-Prediction RandomForest::predict(cv::Mat testImage,
+Prediction RandomForest::predict(cv::Mat &testImage,
                                  Size winStride,
                                  Size padding)
 {
@@ -151,7 +199,8 @@ Prediction RandomForest::predict(cv::Mat testImage,
             maxCountLabel = label;
     }
 
-    return Prediction{.label = maxCountLabel, .confidence = (labelCounts[maxCountLabel] * 1.0f) / m_numberOfDTrees};
+    return Prediction{.label = maxCountLabel,
+                      .confidence = (labelCounts[maxCountLabel] * 1.0f) / m_numberOfDTrees};
 }
 
 cv::Ptr<cv::ml::DTrees> RandomForest::trainDecisionTree(vector<pair<int, cv::Mat>> &trainingImagesLabelVector,
