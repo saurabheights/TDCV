@@ -370,8 +370,9 @@ cout << "\n";
         exit(-1);
     }
     outputFile << "Precision,Recall"<< endl;
-    for (float NMS_CONFIDENCE_THRESHOLD = 0; NMS_CONFIDENCE_THRESHOLD <= 1; NMS_CONFIDENCE_THRESHOLD += 0.05)
+    for (int confidence = 0; confidence <= 100; confidence += 5) // If float is used, it may overshoot 1.0 - floating point error
     {
+        float NMS_CONFIDENCE_THRESHOLD = confidence / 100.0f;
         vector<float> precisionRecallValue = task3_core(outputDir, testImagesLabelVector, labelAndBoundingBoxes, gtColors, NMS_MIN_IOU_THRESHOLD, NMS_MAX_IOU_THRESHOLD, NMS_CONFIDENCE_THRESHOLD);
         cout << "NMS_CONFIDENCE_THRESHOLD: " << NMS_CONFIDENCE_THRESHOLD << ", Precision: " << precisionRecallValue[0] << ", Recall: " << precisionRecallValue[1] << endl;
         outputFile << precisionRecallValue[0] << "," << precisionRecallValue[1] << endl;
