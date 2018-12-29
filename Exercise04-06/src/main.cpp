@@ -4,6 +4,7 @@
 #include <iomanip>
 #include <sstream>
 #include <random>
+#include <opencv2/core/utils/filesystem.hpp>
 using namespace cv;
 using namespace std;
 
@@ -328,6 +329,114 @@ vector<vector<vector<int>>> getLabelAndBoundingBoxes()
     return groundTruthBoundingBoxes;
 }
 
+/**
+ * Only computes bounding boxes and their confidence. 
+ * NMS and Metric Evaluation is done in evaluation.cpp. 
+ **/
+void task3_core(cv::Ptr<RandomForest> &randomForest,
+                vector<pair<int, cv::Mat>> &testImagesLabelVector,
+                vector<vector<vector<int>>> &labelAndBoundingBoxes,
+                int strideX, int strideY,
+                cv::Size winStride, cv::Size padding,
+                cv::Scalar *gtColors,
+                float scaleFactor,
+                string outputDir)
+{
+    ofstream predictionsFile(outputDir + "predictions.txt");
+    if (!predictionsFile.is_open())
+    {
+        cout << "Failed to open" << outputDir + "predictions.txt" << endl;
+        exit(-1);
+    }
+
+    for (size_t i = 0; i < testImagesLabelVector.size(); i++)
+    {
+        cout << "Running prediction on " << (i+1) << " of " << testImagesLabelVector.size() << " images.\n"; 
+        predictionsFile << i << endl; // Prediction file format: Starts with File number
+        cv::Mat testImage = testImagesLabelVector.at(i).second;
+
+        // Run testing on various bounding boxes of different scales
+        // int minBoundingBoxSideLength = 70, maxBoundingBoxSideLength = 230;
+        int minBoundingBoxSideLength = 1000, maxBoundingBoxSideLength = -1;
+        vector<vector<int>> imageLabelsAndBoundingBoxes = labelAndBoundingBoxes.at(i);
+        predictionsFile << imageLabelsAndBoundingBoxes.size() << endl; // Prediction file format: Next is Number of Ground Truth Boxes - Say K
+        for (size_t j = 0; j < imageLabelsAndBoundingBoxes.size(); j++)
+        {
+            vector<int> bbox = imageLabelsAndBoundingBoxes.at(j);
+            cv::Rect rect(bbox[1], bbox[2], bbox[3] - bbox[1], bbox[4] - bbox[2]);
+            // Prediction file format: Next is K Lines of Labels and cv::Rect
+            predictionsFile << imageLabelsAndBoundingBoxes.at(j).at(0) << " " << rect.x << " " << rect.y << " " << rect.height << " " << rect.width << endl;
+            minBoundingBoxSideLength = min(minBoundingBoxSideLength, min(rect.width, rect.height));
+            maxBoundingBoxSideLength = max(maxBoundingBoxSideLength, max(rect.width, rect.height));
+        }
+        minBoundingBoxSideLength -= 10;
+        maxBoundingBoxSideLength += 10;
+
+        int boundingBoxSideLength = minBoundingBoxSideLength;
+        vector<Prediction> predictionsVector; // Output of Hog Detection
+        while (true)
+        {
+            cout << "Processing at bounding box side length: " << boundingBoxSideLength << '\n';
+            // Sliding window with stride
+            for (size_t row = 0; row < testImage.rows - boundingBoxSideLength; row += strideY)
+            {
+                for (size_t col = 0; col < testImage.cols - boundingBoxSideLength; col += strideX)
+                {
+                    cv::Rect rect(col, row, boundingBoxSideLength, boundingBoxSideLength);
+                    cv::Mat rectImage = testImage(rect);
+
+                    // Predict on subimage
+                    Prediction prediction = randomForest->predict(rectImage, winStride, padding);
+                    if (prediction.label != 3) // Ignore Background class.
+                    {
+                        prediction.bbox = rect;
+                        predictionsVector.push_back(prediction);
+                    }
+                }
+            }
+
+            if (boundingBoxSideLength == maxBoundingBoxSideLength) // Maximum Bounding Box Size from ground truth
+                break;
+            boundingBoxSideLength = (boundingBoxSideLength * scaleFactor + 0.5);
+            if (boundingBoxSideLength > maxBoundingBoxSideLength)
+                boundingBoxSideLength = maxBoundingBoxSideLength;
+        }
+
+        // Prediction file format: Next is N Lines of Labels, cv::Rect and confidence
+        predictionsFile << predictionsVector.size() << endl;
+        for (auto &&prediction : predictionsVector)
+        {
+            // Prediction file format: Next is N Lines of Labels and cv::Rect
+            predictionsFile << prediction.label << " " << prediction.bbox.x << " " << prediction.bbox.y << " " << prediction.bbox.height << " " << prediction.bbox.width << " " << prediction.confidence << endl;
+        }
+
+        cv::Mat testImageClone = testImage.clone(); // For drawing bbox
+        for (auto &&prediction : predictionsVector)
+            cv::rectangle(testImageClone, prediction.bbox, gtColors[prediction.label]);
+
+        // Draw bounding box on the test image using ground truth
+        imageLabelsAndBoundingBoxes = labelAndBoundingBoxes.at(i);
+        cv::Mat testImageGtClone = testImage.clone(); // For drawing bbox
+        for (size_t j = 0; j < imageLabelsAndBoundingBoxes.size(); j++)
+        {
+            vector<int> bbox = imageLabelsAndBoundingBoxes.at(j);
+            cv::Rect rect(bbox[1], bbox[2], bbox[3] - bbox[1], bbox[4] - bbox[2]);
+            cv::rectangle(testImageGtClone, rect, gtColors[bbox[0]]);
+        }
+
+        stringstream modelOutputFilePath;
+        modelOutputFilePath << outputDir << setfill('0') << setw(4) << i << "-ModelOutput.png";
+        string modelOutputFilePathStr = modelOutputFilePath.str();
+        cv::imwrite(modelOutputFilePathStr, testImageClone);
+
+        stringstream gtFilePath;
+        gtFilePath << outputDir << setfill('0') << setw(4) << i << "-GrountTruth.png";
+        string gtFilePathStr = gtFilePath.str();
+        cv::imwrite(gtFilePathStr, testImageGtClone);
+    }
+    predictionsFile.close();
+}
+
 void task3()
 {
     // Load all the images
@@ -357,167 +466,23 @@ void task3()
     gtColors[1] = cv::Scalar(0, 255, 0);
     gtColors[2] = cv::Scalar(0, 0, 255);
     gtColors[3] = cv::Scalar(255, 255, 0);
-    int minSize = 1000, maxSize = -1; // To compute the variation of bounding box sizes in ground truth
-    for (size_t i = 0; i < testImagesLabelVector.size(); i++)
-    {
-        cout << "Test Image: " << i << endl;
-        cv::Mat testImage = testImagesLabelVector.at(i).second;
 
-        // Run testing on various bounding boxes of different scales
-        // int minBoundingBoxSideLength = 70, maxBoundingBoxSideLength = 230;
-        int minBoundingBoxSideLength = 1000, maxBoundingBoxSideLength = -1;
-        vector<vector<int>> imageLabelsAndBoundingBoxes = labelAndBoundingBoxes.at(i);
-        cout << "Ground truth" << endl;
-        cout << imageLabelsAndBoundingBoxes.size() << endl;
-        for (size_t j = 0; j < imageLabelsAndBoundingBoxes.size(); j++)
-        {
-            vector<int> bbox = imageLabelsAndBoundingBoxes.at(j);
-            cv::Rect rect(bbox[1], bbox[2], bbox[3] - bbox[1], bbox[4] - bbox[2]);
-            cout << imageLabelsAndBoundingBoxes.at(j).at(0) << " " << rect.x << " " << rect.y << " " << rect.height << " " << rect.width << endl;
-            minBoundingBoxSideLength = min(minBoundingBoxSideLength, min(rect.width, rect.height));
-            maxBoundingBoxSideLength = max(maxBoundingBoxSideLength, max(rect.width, rect.height));
-        }
-        minBoundingBoxSideLength -= 10;
-        maxBoundingBoxSideLength += 10;
+    float scaleFactor = 1.20;
+    int strideX = 2;
+    int strideY = 2;
+    
+    // NMS-Not used. Each boundin box is dumped to the text file which contains the confidence value. The thresholding is done in evaluation.cpp
+    float NMS_MAX_IOU_THRESHOLD = 0.5f; // If above this threshold, merge the two bounding boxes.
+    float NMS_MIN_IOU_THRESHOLD = 0.1f; // If above this threshold, drop the bounding boxes with lower confidence.
+    float NMS_CONFIDENCE_THRESHOLD = 0.6f;
 
-        int boundingBoxSideLength = minBoundingBoxSideLength;
-        float scaleFactor = 1.20;
-        int strideX = 2;
-        int strideY = 2;
-        vector<Prediction> predictionsVector; // Output of Hog Detection
-        float NMS_CONFIDENCE_THRESHOLD = 0.6f;
-        while (true)
-        {
-            cout << "Processing at bounding box side length: " << boundingBoxSideLength << '\n';
-            
-            // Sliding window with stride
-            for (size_t row = 0; row < testImage.rows - boundingBoxSideLength; row += strideY)
-            {
-                for (size_t col = 0; col < testImage.cols - boundingBoxSideLength; col += strideX)
-                {
-                    cv::Rect rect(col, row, boundingBoxSideLength, boundingBoxSideLength);
-                    cv::Mat rectImage = testImage(rect);
-
-                    // Predict on subimage
-                    Prediction prediction = randomForest->predict(rectImage, winStride, padding);
-                    if (prediction.label != 3 && prediction.confidence > NMS_CONFIDENCE_THRESHOLD) // Ignore Background class.
-                    {
-                        prediction.bbox = rect;
-                        predictionsVector.push_back(prediction);
-                    }
-                }
-            }
-
-            if (boundingBoxSideLength == maxBoundingBoxSideLength) // Maximum Bounding Box Size from ground truth
-                break;
-            boundingBoxSideLength = (boundingBoxSideLength * scaleFactor + 0.5);
-            if (boundingBoxSideLength > maxBoundingBoxSideLength)
-                boundingBoxSideLength = maxBoundingBoxSideLength;
-        }
-
-        // Display all the bounding boxes before NonMaximal Suppression
-        cv::Mat testImageClone = testImage.clone(); // For drawing bbox
-        for (auto &&prediction : predictionsVector)
-        {
-            cv::rectangle(testImageClone, prediction.bbox, gtColors[prediction.label]);
-        }
-        cv::imshow("TestImageOutput", testImageClone);
-        cv::waitKey(500);
-
-        // Apply NonMaximal Suppression
-        cv::Mat testImageNmsClone = testImage.clone(); // For drawing bbox
-        float NMS_MAX_IOU_THRESHOLD = 0.5f; // If above this threshold, merge the two bounding boxes.
-        float NMS_MIN_IOU_THRESHOLD = 0.1f; // If above this threshold, drop the bounding boxes with lower confidence.
-        {
-            vector<Prediction> predictionsNMSVector;
-            predictionsNMSVector.reserve(100); // 100 should be enough.
-            for (auto &&prediction : predictionsVector)
-            {
-                // Check if NMS already has a cluster which shares NMS_IOU_THRESHOLD area with current prediction.bbox and both have same label.
-                bool clusterFound = false;
-                for (auto &&nmsCluster : predictionsNMSVector)
-                {
-                    if (nmsCluster.label == prediction.label)
-                    { // Only if same label
-                        Rect &rect1 = prediction.bbox;
-                        Rect &rect2 = nmsCluster.bbox;
-                        float iouScore = ((rect1 & rect2).area() * 1.0f) / ((rect1 | rect2).area());
-                        if (iouScore > NMS_MAX_IOU_THRESHOLD) // Merge the two bounding boxes
-                        {
-                            // Update cluster bbox using weighted mean
-                            // Point topLeft;
-                            // topLeft.x = rect1.x * prediction.confidence + rect2.x * nmsCluster.confidence;
-                            // topLeft.y = rect1.y * prediction.confidence + rect2.y * nmsCluster.confidence;
-                            // Point bottomRight;
-                            // bottomRight.x = (rect1.x + rect1.width) * prediction.confidence + (rect2.x + rect2.width) * nmsCluster.confidence;
-                            // bottomRight.y = (rect1.y + rect1.height) * prediction.confidence + (rect2.y + rect2.height) * nmsCluster.confidence;
-                            // nmsCluster.bbox = cv::Rect(topLeft, bottomRight);
-                            nmsCluster.bbox = rect1 | rect2;
-                            nmsCluster.confidence = max(prediction.confidence, nmsCluster.confidence);
-                            clusterFound = true;
-                            break;
-                        } else if(iouScore > NMS_MIN_IOU_THRESHOLD) { // Drop the bounding box with lower confidence
-                            if(nmsCluster.confidence < prediction.confidence) {
-                                nmsCluster = prediction; 
-                            }
-                            clusterFound = true;
-                            break;
-                        }
-                    }
-                }
-
-                // If no NMS cluster found, add the prediction as a new cluster
-                if (!clusterFound)
-                {
-                    predictionsNMSVector.push_back(prediction);
-                }
-            }
-
-            // Display all the bounding boxes before NonMaximal Suppression
-            cout << "NMS Prediction: " << endl;
-            cout << predictionsNMSVector.size() << endl;
-            for (auto &&prediction : predictionsNMSVector)
-            {
-                cv::rectangle(testImageNmsClone, prediction.bbox, gtColors[prediction.label]);
-                cout << prediction.label << " " << prediction.bbox.x << " " << prediction.bbox.y << " " << prediction.bbox.height << " " << prediction.bbox.width << endl;
-            }
-            // cv::imshow("TestImage NMS Output", testImageNmsClone);
-            // cv::waitKey(500);
-            cout << "Boxes count: " << predictionsVector.size();
-            cout << "\nNMS boxes count: " << predictionsNMSVector.size() << '\n';
-        } 
-
-        // Draw bounding box on the test image using ground truth
-        imageLabelsAndBoundingBoxes = labelAndBoundingBoxes.at(i);
-        cv::Mat testImageGtClone = testImage.clone(); // For drawing bbox
-        for (size_t j = 0; j < imageLabelsAndBoundingBoxes.size(); j++)
-        {
-            vector<int> bbox = imageLabelsAndBoundingBoxes.at(j);
-            cv::Rect rect(bbox[1], bbox[2], bbox[3] - bbox[1], bbox[4] - bbox[2]);
-            minSize = min(minSize, min(rect.width, rect.height)); // - For Analysis of scale to be used
-            maxSize = max(maxSize, max(rect.width, rect.height)); // - For Analysis of scale to be used
-            cv::rectangle(testImageGtClone, rect, gtColors[bbox[0]]);
-        }
-
-        // cv::imshow("GrountTruth", testImageGtClone);
-        // cv::waitKey(0);
-
-        stringstream modelOutputFilePath;
-        modelOutputFilePath << string(PROJ_DIR) << "/output-augmentTrue-undersamplingFalse/" << setfill('0') << setw(4) << i << "-ModelOutput.png";
-        string modelOutputFilePathStr = modelOutputFilePath.str();
-        cv::imwrite(modelOutputFilePathStr, testImageClone);
-
-        stringstream nmsOutputFilePath;
-        nmsOutputFilePath << string(PROJ_DIR) << "/output-augmentTrue-undersamplingFalse/" << setfill('0') << setw(4) << i << "-NMSOutput.png";
-        string nmsOutputFilePathStr = nmsOutputFilePath.str();
-        cv::imwrite(nmsOutputFilePathStr, testImageNmsClone);
-
-        stringstream gtFilePath;
-        gtFilePath << string(PROJ_DIR) << "/output-augmentTrue-undersamplingFalse/" << setfill('0') << setw(4) << i << "-GrountTruth.png";
-        string gtFilePathStr = gtFilePath.str();
-        cv::imwrite(gtFilePathStr, testImageGtClone);
-    }
-    cout << minSize << ", " << maxSize << endl;
+    // Loop over multiple values.
+    std::ostringstream s;
+    s << PROJ_DIR << "/output/Trees-" << numberOfDTrees << "_subsetPercent-" << ((int)subsetPercentage) << "-undersampling_" << undersampling << "-augment_" << augment << "-strideX_" << strideX << "-strideY_" << strideY << "-NMS_MIN_" << NMS_MIN_IOU_THRESHOLD << "-NMS_Max_" << NMS_MAX_IOU_THRESHOLD << "-NMS_CONF_" << NMS_CONFIDENCE_THRESHOLD << "/";
+    string outputDir = s.str();
+    cv::utils::fs::createDirectory(outputDir);
+    task3_core(randomForest, testImagesLabelVector, labelAndBoundingBoxes, strideX, strideY, winStride, padding, gtColors,
+               scaleFactor, outputDir);
 }
 
 int main()
@@ -538,8 +503,5 @@ int main()
 
     // Task 3
     task3();
-    waitKey(0);
-    int a;
-    cin >> a;
     return 0;
 }

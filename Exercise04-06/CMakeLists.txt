@@ -17,12 +17,14 @@ set(HEADER_FILES
         include/RandomForest.h)
 
 set(SOURCE_FILES
-        src/main.cpp
         src/HogVisualization.cpp
         src/RandomForest.cpp)
 
-add_executable(HogBasedObjectDetection ${HEADER_FILES} ${SOURCE_FILES})
+add_executable(HogBasedObjectDetection src/main.cpp ${HEADER_FILES} ${SOURCE_FILES})
 target_link_libraries(HogBasedObjectDetection ${OpenCV_LIBRARIES})
+
+add_executable(NMSAndEvaluation src/evaluation.cpp ${HEADER_FILES} ${SOURCE_FILES})
+target_link_libraries(NMSAndEvaluation ${OpenCV_LIBRARIES})
 
 # Debug
 get_cmake_property(_variableNames VARIABLES)
