@@ -298,7 +298,7 @@ vector<float> task3_core(string outputDir,
 
         // Write NMS output image
         stringstream nmsOutputFilePath;
-        nmsOutputFilePath << outputDir << setfill('0') << setw(4) << i << "-Confidence-" << NMS_CONFIDENCE_THRESHOLD << "-NMSOutput.png";
+        nmsOutputFilePath << outputDir << setfill('0') << setw(4) << i << "-NMSOutput" << "-Confidence-" << NMS_CONFIDENCE_THRESHOLD << ".png";
         string nmsOutputFilePathStr = nmsOutputFilePath.str();
         cv::imwrite(nmsOutputFilePathStr, testImageNmsClone);
 
