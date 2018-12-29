@@ -93,7 +93,7 @@ vector<float> computeTpFpFn(vector<Prediction> predictionsNMSVector,
                             vector<Prediction> groundTruthPredictions)
 {
     float tp = 0, fp = 0, fn = 0;
-    float matchThresholdIou = 0.5f;
+    float matchThresholdIou = 0.3f;
 
     for (auto &&myPrediction : predictionsNMSVector)
     {
@@ -105,7 +105,7 @@ vector<float> computeTpFpFn(vector<Prediction> predictionsNMSVector,
             if (groundTruth.label != myPrediction.label)
                 continue;
             Rect gtRect = groundTruth.bbox;
-            float iouScore = ((myRect & gtRect).area() * 1.0f) / ((gtRect).area());
+            float iouScore = ((myRect & gtRect).area() * 1.0f) / ((myRect | gtRect).area());
             if (iouScore > matchThresholdIou)
             {
                 matchesWithAnyGroundTruth = true;
@@ -128,7 +128,7 @@ vector<float> computeTpFpFn(vector<Prediction> predictionsNMSVector,
             if (groundTruth.label != myPrediction.label)
                 continue;
             Rect myRect = myPrediction.bbox;
-            float iouScore = ((myRect & gtRect).area() * 1.0f) / ((gtRect).area());
+            float iouScore = ((myRect & gtRect).area() * 1.0f) / ((myRect | gtRect).area());
             if (iouScore > matchThresholdIou)
             {
                 isGtBboxMissed = false;
@@ -161,6 +161,7 @@ vector<float> task3_core(string outputDir,
         cout << "Failed to open" << outputDir + "predictions.txt" << endl;
         exit(-1);
     }
+
 
     float tp = 0, fp = 0, fn = 0;
     for (size_t i = 0; i < testImagesLabelVector.size(); i++)
@@ -223,13 +224,21 @@ vector<float> task3_core(string outputDir,
         cv::Mat testImageNmsClone = testImage.clone();  // For drawing bbox
         vector<Prediction> predictionsNMSVector;
         predictionsNMSVector.reserve(20); // 20 should be enough.
+
+        // Ignore boxes with low threshold.
+        std::vector<Prediction>::iterator iter;
+        for (iter = predictionsVector.begin(); iter != predictionsVector.end(); ) {
+            if (iter->confidence < NMS_CONFIDENCE_THRESHOLD)
+                iter = predictionsVector.erase(iter);
+            else
+                ++iter;
+        }
+
+        // std::sort(predictionsVector.begin(), predictionsVector.end(), greater_than_key());
+
         for (auto &&prediction : predictionsVector)
         {
-            // Ignore boxes with low threshold.
-            if (prediction.confidence < NMS_CONFIDENCE_THRESHOLD)
-                continue;
             cv::rectangle(testImageNms1Clone, prediction.bbox, gtColors[prediction.label]);
-
             // Check if NMS already has a cluster which shares NMS_IOU_THRESHOLD area with current prediction.bbox and both have same label.
             bool clusterFound = false;
             for (auto &&nmsCluster : predictionsNMSVector)
@@ -246,16 +255,16 @@ vector<float> task3_core(string outputDir,
                         clusterFound = true;
                         break;
                     }
-                    else if (iouScore > NMS_MIN_IOU_THRESHOLD) // ToDo: Improve this.
-                    {
-                        // Drop the bounding box with lower confidence
-                        if (nmsCluster.confidence < prediction.confidence)
-                        {
-                            nmsCluster = prediction;
-                        }
-                        clusterFound = true;
-                        break;
-                    }
+                    // else if (iouScore > NMS_MIN_IOU_THRESHOLD) // ToDo: Improve this.
+                    // {
+                    //     // Drop the bounding box with lower confidence
+                    //     if (nmsCluster.confidence < prediction.confidence)
+                    //     {
+                    //         nmsCluster = prediction;
+                    //     }
+                    //     clusterFound = true;
+                    //     break;
+                    // }
                 }
             }
 
