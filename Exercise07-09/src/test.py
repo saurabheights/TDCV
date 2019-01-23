@@ -1,12 +1,14 @@
 import tensorflow as tf
 import numpy as np
+from sklearn.metrics import confusion_matrix
 
 import models
-from data_loader import DatasetGenerator
+from data_loader import DatasetGenerator, seqNames
 from sklearn.neighbors import NearestNeighbors
 import matplotlib.pyplot as plt
 
 from data_loader import compute_quaternion_angle_diff
+from metric import plot_confusion_matrix
 
 tf.enable_eager_execution()
 
@@ -43,17 +45,34 @@ dataset = tf.data.Dataset.from_tensor_slices(test_images).batch(1)
 accuracy = 0
 
 angular_differences = []
+y_pred = []
+y_test = []
 for test_image_index, image in enumerate(dataset):
     # Compute the descriptors
     embedding = model(image)
     test_label = test_dataset[test_image_index][1]
     prediction_distance, prediction_index = nbrs.kneighbors(embedding.numpy(), 5)
     prediction_label = int(np.round(db_data_for_knn_label[prediction_index[0][0]]))
+    y_pred.append(prediction_label)
+    y_test.append(test_label)
     if prediction_label == test_label:
         accuracy +=1
         angular_difference = compute_quaternion_angle_diff(db_data_for_knn_quat[prediction_index[0][0]],
                                                            test_dataset[test_image_index][2:6])
         angular_differences.append(angular_difference)
+
+# Compute confusion matrix
+cnf_matrix = confusion_matrix(y_test, y_pred)
+np.set_printoptions(precision=2)
+
+# Plot non-normalized confusion matrix
+plt.figure()
+# plot_confusion_matrix(cnf_matrix, classes=list(seqNames),
+#                       title='Confusion matrix, without normalization')
+plot_confusion_matrix(cnf_matrix, classes=list(seqNames),
+                      normalize=True,
+                      title='Normalized confusion matrix')
+plt.savefig(checkpoint_dir + 'TestPy_Confusion_Matrix_%3d.png' % epoch)
 
 bins = list(range(0,181,10))
 hist, bin_edges = np.histogram(angular_differences, bins=bins)
@@ -67,6 +86,6 @@ ax.set_xticks([i for i,j in enumerate(hist)])
 # Set the xticklabels to a string that tells us what the bin edges were
 ax.set_xticklabels(['{} - {}'.format(bins[i],bins[i+1]) for i,j in enumerate(hist)])
 plt.show()
-plt.savefig(checkpoint_dir + '/Test_Histogram_Plot_DuringTesting.png')
+plt.savefig(checkpoint_dir + '/TestPy_Histogram_Plot.png')
 accuracy = accuracy/len(test_images)
 print("The accuracy(%% of correct predictions) is: %f" % accuracy)

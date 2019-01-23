@@ -4,21 +4,23 @@ import numpy as np
 import tensorflow as tf
 import torch
 
+from metric import plot_confusion_matrix
+
 tf.enable_eager_execution()
 from sklearn.neighbors import NearestNeighbors
 from tensorboardX import SummaryWriter
 import models
 from loss import Triplet_And_Pair_Loss
-from data_loader import DatasetGenerator, compute_quaternion_angle_diff
+from data_loader import DatasetGenerator, compute_quaternion_angle_diff, seqNames
 import matplotlib.pyplot as plt
-
+from sklearn.metrics import confusion_matrix
 
 num_epochs = 100
 iter_per_epoch = 1000
 batch_size = 32
 margin = 0.01
 checkpoint_dir = None  # "model_checkpoint_epoch_003_Loss:_0.003.ckpt"
-output_dir = 'outputPair1Triplet1-2/'
+output_dir = 'OutputWithConfusionAndHistogram/'
 
 
 def grad(model, images):
@@ -75,7 +77,7 @@ for epoch in range(num_epochs):
 
     # Save model
     os.makedirs(output_dir, exist_ok=True)
-    checkpoint_prefix = os.path.join(output_dir, "ckpt")
+    checkpoint_prefix = os.path.join(output_dir, "%d.ckpt" % epoch)
     checkpoint = tf.train.Checkpoint(model=model)
     checkpoint.save(file_prefix=checkpoint_prefix)
 
@@ -85,7 +87,7 @@ for epoch in range(num_epochs):
     dataset = tf.data.Dataset.from_tensor_slices(db_images).batch(1)
     db_data_for_knn = np.ndarray([len(db), 1 + 4 + 16], dtype=np.float64)  # Save Embedding Features and 4 quaternions
     db_image_index = 0
-    embeddings = np.ndarray([0,16], dtype=np.float64)
+    embeddings = np.ndarray([0, 16], dtype=np.float64)
     label_imgs = torch.IntTensor()
     metadata = []
     for image in dataset:
@@ -94,14 +96,14 @@ for epoch in range(num_epochs):
         db_data_for_knn[db_image_index, :] = np.append(np.array(db[db_image_index][1:6]), embedding.numpy()[0, :])
         embeddings = np.vstack((embeddings, embedding.numpy()))
         metadata.append(db[db_image_index][1])
-        label_img = torch.from_numpy(image.numpy() * gen.dev + gen.mean).int().permute(0,3,1,2).squeeze()
+        label_img = torch.from_numpy(image.numpy() * gen.dev + gen.mean).int().permute(0, 3, 1, 2).squeeze()
         label_imgs = torch.cat((label_imgs, label_img.view(-1, *label_img.shape)))
         db_image_index += 1
 
     writer.add_embedding(embeddings,
                          metadata=metadata,
                          label_img=label_imgs,
-                         tag='test_epoch_'+str(epoch))
+                         tag='test_epoch_' + str(epoch))
 
     # Save the trained descriptors
     filename = os.path.join(output_dir, "TrainedDBFeatures-epoch_%d.bin" % epoch)
@@ -114,7 +116,7 @@ for epoch in range(num_epochs):
     db_data_for_knn_features = db_data_for_knn[:, 5:21]
     nbrs = NearestNeighbors(n_neighbors=1, algorithm='ball_tree').fit(db_data_for_knn_features)
 
-    # Compute accuracy over each test images
+    # Compute confusion matrix accuracy and over each test images
     test_dataset = gen.test
     test_images = [test_sample[0] for test_sample in gen.test]
     dataset = tf.data.Dataset.from_tensor_slices(test_images).batch(1)
@@ -122,17 +124,34 @@ for epoch in range(num_epochs):
     accuracy = 0
     histogram_of_angular_difference = np.ndarray([0], dtype=np.float64)
     angular_differences = []
+    y_pred = []
+    y_test = []
     for test_image_index, image in enumerate(dataset):
         # Compute the descriptors
         embedding = model(image)
         test_label = test_dataset[test_image_index][1]
         prediction_distance, prediction_index = nbrs.kneighbors(embedding.numpy())
         prediction_label = int(np.round(db_data_for_knn_label[prediction_index[0][0]]))
+        y_pred.append(prediction_label)
+        y_test.append(test_label)
         if prediction_label == test_label:
             accuracy += 1
             angular_difference = compute_quaternion_angle_diff(db_data_for_knn_quat[prediction_index[0][0]],
                                                                test_dataset[test_image_index][2:6])
             angular_differences.append(angular_difference)
+
+    # Compute confusion matrix
+    cnf_matrix = confusion_matrix(y_test, y_pred)
+    np.set_printoptions(precision=2)
+
+    # Plot non-normalized confusion matrix
+    plt.figure()
+    # plot_confusion_matrix(cnf_matrix, classes=list(seqNames),
+    #                       title='Confusion matrix, without normalization')
+    plot_confusion_matrix(cnf_matrix, classes=list(seqNames),
+                          normalize=True,
+                          title='Normalized confusion matrix')
+    plt.savefig(output_dir + 'Confusion_Matrix_%3d.png' % epoch)
 
     bins = list(range(0, 181, 1))
     hist, bin_edges = np.histogram(angular_differences, bins=bins)
@@ -150,7 +169,7 @@ for epoch in range(num_epochs):
     ax.set_xticks([i for i, j in enumerate(hist)])
     # Set the xticklabels to a string that tells us what the bin edges were
     ax.set_xticklabels(['{} - {}'.format(bins[i], bins[i + 1]) for i, j in enumerate(hist)])
-    plt.savefig(output_dir + 'Test_Histogram_Plot_%3d.png'%epoch)
+    plt.savefig(output_dir + 'Test_Histogram_Plot_%3d.png' % epoch)
     plt.show()
 
     accuracy = accuracy / len(test_images)
