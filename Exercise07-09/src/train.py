@@ -11,7 +11,6 @@ from sklearn.neighbors import NearestNeighbors
 from tensorboardX import SummaryWriter
 import models
 from loss import Triplet_And_Pair_Loss
-from data_loader import DatasetGenerator, compute_quaternion_angle_diff, seqNames
 import matplotlib.pyplot as plt
 from sklearn.metrics import confusion_matrix
 
@@ -19,8 +18,21 @@ num_epochs = 100
 iter_per_epoch = 1000
 batch_size = 32
 margin = 0.01
-checkpoint_dir = None  # "model_checkpoint_epoch_003_Loss:_0.003.ckpt"
-output_dir = 'OutputWithConfusionAndHistogram/'
+learning_rate=0.001
+beta1=0.9
+beta2=0.999
+checkpoint_dir = None  #'OutputWithConfusionAndHistogram'
+output_dir = f'Output_epochs_{num_epochs}_iter_per_epoch_{iter_per_epoch}_batch_size_{batch_size}_lr{learning_rate}_lrplateau/'
+
+## Create model and optimizer
+model = models.TdcvModel()
+optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate, beta1=beta1, beta2=beta2)
+global_step = tf.train.get_or_create_global_step()
+checkpoint = tf.train.Checkpoint(model=model, optimizer=optimizer, global_step=global_step)
+
+## Load a pre-trained model
+if checkpoint_dir is not None:
+    status = checkpoint.restore(tf.train.latest_checkpoint(checkpoint_dir))
 
 
 def grad(model, images):
@@ -29,23 +41,14 @@ def grad(model, images):
     return loss_value, tape.gradient(loss_value, model.trainable_variables)
 
 
+from data_loader import DatasetGenerator, compute_quaternion_angle_diff, seqNames
 gen = DatasetGenerator(iter_per_epoch, batch_size, True)
-
-# Create model and optimizer
-model = models.TdcvModel()
-optimizer = tf.train.AdamOptimizer(learning_rate=0.001, beta1=0.9, beta2=0.99)
-global_step = tf.train.get_or_create_global_step()
-
-# Load a pre-trained model
-if checkpoint_dir is not None:
-    checkpoint = tf.train.Checkpoint(model=model)
-    status = checkpoint.restore(tf.train.latest_checkpoint(checkpoint_dir))
 
 # Tensorboard - Does not works with Eager Execution since there is no graph. Using TensorboardX
 writer = SummaryWriter(output_dir)
 
 train_loss_results = []
-itr = 0
+epoch_losses = []
 for epoch in range(num_epochs):
     # Training loop - using batches of 32
     epoch_loss_sum = 0.0
@@ -60,11 +63,10 @@ for epoch in range(num_epochs):
             # Optimize the model
             loss_value, grads = grad(model, batch_input)
             optimizer.apply_gradients(zip(grads, model.variables), global_step)
-            itr += 1
 
-            if itr % 10 == 0:
-                print('%s, %s' % (itr, tf.reduce_sum(loss_value).numpy()))
-                writer.add_scalar('train/loss', tf.reduce_sum(loss_value).numpy(), itr)
+            if global_step.numpy() % 10 == 0:
+                # print('%s, %s' % (global_step.numpy(), tf.reduce_sum(loss_value).numpy()))
+                writer.add_scalar('train/loss', tf.reduce_sum(loss_value).numpy(), global_step)
 
         # Track progress
         # epoch_loss_avg(loss_value)  # add current batch loss
@@ -72,13 +74,22 @@ for epoch in range(num_epochs):
         epoch_loss_sum = epoch_loss_sum + tf.reduce_sum(loss_value).numpy()
 
     # end epoch
+    epoch_loss_sum = epoch_loss_sum / iter_per_epoch
+    epoch_losses.append(epoch_loss_sum)
     print("Epoch {:03d}: Loss: {:.3f}".format(epoch, epoch_loss_sum / iter_per_epoch))
-    writer.add_scalar('train/epoch_loss', epoch_loss_sum / iter_per_epoch, itr)
+    writer.add_scalar('train/epoch_loss', epoch_loss_sum / iter_per_epoch, global_step)
+
+    # LR PLateau
+    if len(epoch_losses) > 1:
+        prev_epoch_loss = epoch_losses[-2]
+        curr_epoch_loss = epoch_losses[-1]
+        if curr_epoch_loss > 0.95 * prev_epoch_loss:  # Not much decrease
+            learning_rate = learning_rate*0.99
+            optimizer._lr = learning_rate
 
     # Save model
     os.makedirs(output_dir, exist_ok=True)
     checkpoint_prefix = os.path.join(output_dir, "%d.ckpt" % epoch)
-    checkpoint = tf.train.Checkpoint(model=model)
     checkpoint.save(file_prefix=checkpoint_prefix)
 
     # Compute the DB descriptors
@@ -141,19 +152,22 @@ for epoch in range(num_epochs):
             angular_differences.append(angular_difference)
 
     # Compute confusion matrix
+    print(y_test)
+    print(y_pred)
     cnf_matrix = confusion_matrix(y_test, y_pred)
     np.set_printoptions(precision=2)
 
-    # Plot non-normalized confusion matrix
     plt.figure()
+    # Plot non-normalized confusion matrix
     # plot_confusion_matrix(cnf_matrix, classes=list(seqNames),
     #                       title='Confusion matrix, without normalization')
+    # Plot normalized confusion matrix
     plot_confusion_matrix(cnf_matrix, classes=list(seqNames),
                           normalize=True,
                           title='Normalized confusion matrix')
-    plt.savefig(output_dir + 'Confusion_Matrix_%3d.png' % epoch)
+    plt.savefig(output_dir + 'Confusion_Matrix_%03d.png' % epoch)
 
-    bins = list(range(0, 181, 1))
+    bins = list(range(0, 181, 10))
     hist, bin_edges = np.histogram(angular_differences, bins=bins)
     print('Histogram for each degree', hist)
     bins = [0, 10, 20, 40, 180]
@@ -169,11 +183,12 @@ for epoch in range(num_epochs):
     ax.set_xticks([i for i, j in enumerate(hist)])
     # Set the xticklabels to a string that tells us what the bin edges were
     ax.set_xticklabels(['{} - {}'.format(bins[i], bins[i + 1]) for i, j in enumerate(hist)])
-    plt.savefig(output_dir + 'Test_Histogram_Plot_%3d.png' % epoch)
+    plt.savefig(output_dir + 'Test_Histogram_Plot_%03d.png' % epoch)
     plt.show()
 
     accuracy = accuracy / len(test_images)
     print("The accuracy(%% of correct predictions) is: %f" % accuracy)
+    writer.add_scalar('Test/Accuracy', accuracy, epoch)
 
 # export scalar data to JSON for external processing
 writer.export_scalars_to_json(os.path.join(output_dir, "./all_scalars.json"))
