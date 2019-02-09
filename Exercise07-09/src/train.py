@@ -18,27 +18,29 @@ num_epochs = 100
 iter_per_epoch = 1000
 batch_size = 32
 margin = 0.01
-learning_rate=0.001
+learning_rate=0.0001
 beta1=0.9
 beta2=0.999
+pair_loss_weight_factor=5.0
 checkpoint_dir = None  #'OutputWithConfusionAndHistogram'
 output_dir = f'Output_epochs_{num_epochs}_iter_per_epoch_{iter_per_epoch}_batch_size_{batch_size}_lr{learning_rate}_lrplateau/'
 
-## Create model and optimizer
+# Create model and optimizer
 model = models.TdcvModel()
 optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate, beta1=beta1, beta2=beta2)
 global_step = tf.train.get_or_create_global_step()
 checkpoint = tf.train.Checkpoint(model=model, optimizer=optimizer, global_step=global_step)
 
-## Load a pre-trained model
+# Load a pre-trained model
 if checkpoint_dir is not None:
     status = checkpoint.restore(tf.train.latest_checkpoint(checkpoint_dir))
 
 
 def grad(model, images):
     with tf.GradientTape() as tape:
-        loss_value = Triplet_And_Pair_Loss(model, images)
-    return loss_value, tape.gradient(loss_value, model.trainable_variables)
+        triplet_loss, pair_loss = Triplet_And_Pair_Loss(model, images, batch_size, margin, pair_loss_weight_factor)
+        loss_value = triplet_loss + pair_loss
+    return loss_value, triplet_loss, pair_loss, tape.gradient(loss_value, model.trainable_variables)
 
 
 from data_loader import DatasetGenerator, compute_quaternion_angle_diff, seqNames
@@ -61,31 +63,35 @@ for epoch in range(num_epochs):
         dataset = tf.data.Dataset.from_tensor_slices(images_np).batch(batch_size * 3)
         for batch_input in dataset:
             # Optimize the model
-            loss_value, grads = grad(model, batch_input)
+            loss_value, triplet_loss, pair_loss, grads = grad(model, batch_input)
             optimizer.apply_gradients(zip(grads, model.variables), global_step)
 
             if global_step.numpy() % 10 == 0:
-                # print('%s, %s' % (global_step.numpy(), tf.reduce_sum(loss_value).numpy()))
+                print('%s, %s' % (global_step.numpy(), tf.reduce_sum(loss_value).numpy()))
                 writer.add_scalar('train/loss', tf.reduce_sum(loss_value).numpy(), global_step)
+                writer.add_scalar('train/triplet_loss', tf.reduce_sum(triplet_loss).numpy(), global_step)
+                writer.add_scalar('train/pair_loss', tf.reduce_sum(pair_loss).numpy(), global_step)
 
         # Track progress
         # epoch_loss_avg(loss_value)  # add current batch loss
         train_loss_results.append(tf.reduce_sum(loss_value).numpy())
-        epoch_loss_sum = epoch_loss_sum + tf.reduce_sum(loss_value).numpy()
+        epoch_loss_sum += tf.reduce_sum(loss_value).numpy()
 
     # end epoch
-    epoch_loss_sum = epoch_loss_sum / iter_per_epoch
-    epoch_losses.append(epoch_loss_sum)
-    print("Epoch {:03d}: Loss: {:.3f}".format(epoch, epoch_loss_sum / iter_per_epoch))
-    writer.add_scalar('train/epoch_loss', epoch_loss_sum / iter_per_epoch, global_step)
+    epoch_loss_mean = epoch_loss_sum / iter_per_epoch
+    epoch_losses.append(epoch_loss_mean)
+    print("Epoch {:03d}: Loss: {:.3f}".format(epoch, epoch_loss_mean))
+    writer.add_scalar('train/epoch_loss', epoch_loss_mean, global_step)
 
     # LR PLateau
     if len(epoch_losses) > 1:
         prev_epoch_loss = epoch_losses[-2]
         curr_epoch_loss = epoch_losses[-1]
-        if curr_epoch_loss > 0.95 * prev_epoch_loss:  # Not much decrease
-            learning_rate = learning_rate*0.99
-            optimizer._lr = learning_rate
+        if curr_epoch_loss > 0.99 * prev_epoch_loss:  # Not much decrease
+            new_learning_rate = learning_rate*0.95
+            optimizer._lr = new_learning_rate
+            print(f'LR Plateau observed. Changed LR from {learning_rate} to {new_learning_rate}')
+            learning_rate = new_learning_rate
 
     # Save model
     os.makedirs(output_dir, exist_ok=True)
