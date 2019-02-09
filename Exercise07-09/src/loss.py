@@ -1,7 +1,7 @@
 import tensorflow as tf
 
 
-def Triplet_And_Pair_Loss(model, images, batch_size=16, margin=0.01):
+def Triplet_And_Pair_Loss(model, images, batch_size=16, margin=0.01, pair_loss_weight_factor=1):
     embeddings = model(images)
     anchor_output = embeddings[0:batch_size * 3:3]
     positive_output = embeddings[1:batch_size * 3:3]
@@ -11,6 +11,7 @@ def Triplet_And_Pair_Loss(model, images, batch_size=16, margin=0.01):
     triplet_loss = tf.maximum(0.0, 1 - d_neg / (d_pos + margin))
     pair_loss = d_pos
 
-    # Reduce again
-    loss = tf.reduce_sum(triplet_loss) + 2*tf.reduce_sum(pair_loss)
-    return loss
+    # Reduce again and apply weight
+    triplet_loss = tf.reduce_sum(triplet_loss)
+    pair_loss = pair_loss_weight_factor*tf.reduce_sum(pair_loss)
+    return triplet_loss, pair_loss
